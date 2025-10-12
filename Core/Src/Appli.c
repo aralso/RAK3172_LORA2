@@ -5,10 +5,11 @@
  *      Author: Tocqueville
 
 
- TODO : timer, reception/traitement message, eeprom lecture/ecriture, log en flash, pile envoi message lora,
- mesure mode STOP, watchdog, adresses LORA/Uart
+ TODO : FIFO uart pleine
+ mesure mode STOP, adresses LORA/Uart
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 
+ v1.6 10/2025 : hlpuart1
  v1.5 10/2025 : eeprom, log_flash, rtc, messages binaires, attente dans en_queue
  v1.4 09/2025 : fct : refonte reception uart, watchdog contextuel, traitement_rx, opti stack
  v1.3 09/2025 : fct : augmentation stack taches, erreur_freertos
@@ -26,6 +27,7 @@ Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 #include "cmsis_os.h"
 #include <communication.h>
 #include <fonctions.h>
+#include <lora.h>
 #include <eeprom_emul.h>
 #include <log_flash.h>
 #include "timers.h"
@@ -82,14 +84,14 @@ void Appli_Tsk(void *argument);
 
 void init1()  // avant KernelInitialize
 {
-	  HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
 
 	  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
 	  init_msg[0] = dest_log;
 	  init_msg[1] = My_Address;
 	  init_msg[27] = get_log_level()+'0';
 	  uint16_t len = strlen(init_msg);
-	  HAL_UART_Transmit(&huart2, (uint8_t*)init_msg, len, 3000);
+	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
 	  HAL_Delay(500);
 
 }
@@ -102,7 +104,7 @@ void init2()  // création queue, timer, semaphore, taches
 	    char msgL[50];
 	    sprintf(msgL, "Free heap before tasks: %i bytes\r", freeHeap);
 	    HAL_Delay(500);
-	    HAL_UART_Transmit(&huart2, (uint8_t*)msgL, strlen(msgL), 3000);
+	    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
 	    HAL_Delay(500);
 
 	    init_communication();
@@ -133,7 +135,7 @@ void init3()
       if (code_err_tache) {
     	   HAL_Delay(500);
     	   sprintf(msgL, "erreur tache: %02X ", code_err_tache);
-    	  HAL_UART_Transmit(&huart2, (uint8_t*)msgL, strlen(msgL), 3000);
+    	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
     	   HAL_Delay(500);
           //LOG_ERROR("Failed to create Appli_Task");
           // La tâche n'a pas pu être créée
@@ -142,7 +144,7 @@ void init3()
       size_t freeHeap = xPortGetFreeHeapSize();
       sprintf(msgL, "Free heap after tasks: %i bytes\r", freeHeap);
       HAL_Delay(500);
-      HAL_UART_Transmit(&huart2, (uint8_t*)msgL, strlen(msgL), 3000);
+      HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
       HAL_Delay(500);
 
       init_functions();
@@ -461,13 +463,13 @@ void Appli_Tsk(void *argument)
 {
   /* USER CODE BEGIN Appli_Tsk */
   // Démarrer la surveillance watchdog pour cette tâche
-	   //HAL_UART_Transmit(&huart2, (uint8_t*)"InitA", 5, 3000);
+	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
 	   //HAL_Delay(500);
 
   watchdog_task_start(WATCHDOG_TASK_APPLI);
   //LOG_INFO("Appli_Task started with watchdog protection");
 
-  //HAL_UART_Transmit(&huart2, (uint8_t*)"InitB", 5, 3000);
+  //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitB", 5, 3000);
   //HAL_Delay(500);
 
     event_t evt;
@@ -487,6 +489,22 @@ void Appli_Tsk(void *argument)
          else
             LOG_ERROR("Erreur EEPROM");
 
+	#ifdef mode_sleep
+		uint8_t sleep_cmd = RADIO_SET_SLEEP;  // 0x84
+		HAL_SUBGHZ_ExecSetCmd(&hsubghz, sleep_cmd, NULL, 0);
+
+		LOG_INFO("SUBGHZ: Put to sleep at startup");
+	#endif
+
+		osDelay(1000);
+
+		LOG_INFO("SUBGHZ State: %d", hsubghz.State);
+		LOG_INFO("SUBGHZ DeepSleep: %d", hsubghz.DeepSleep);
+
+		/*if (hsubghz.DeepSleep != SUBGHZ_DEEP_SLEEP_ENABLE) {
+			LOG_INFO("SUBGHZ: pb sleep");
+		    // SUBGHZ consomme 500-600µA !
+		}*/
     /*if (EEPROM_Init() == HAL_OK) {
         LOG_INFO("eeprom initialisee");
         osDelay(1000);
@@ -605,7 +623,8 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_WATCHDOG_CHECK: {
-				    watchdog_check_all_tasks();
+					HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
+				    watchdog_check_all_tasks(); // test watdchdog logiciel
 				    break;
 				}
 				case EVENT_TIMER_24h: {
@@ -621,6 +640,7 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
+					HAL_IWDG_Refresh(&hiwdg);
 					LOG_INFO("TIMER 60s event");
 					//osDelay(1000);
 					//check_stack_usage();
@@ -671,7 +691,7 @@ void assert_failed(const char *file, int line)
     int len = snprintf(msg, sizeof(msg), "-- ASSERT failed at %s:%d\r\n", file, line);
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
 
     HAL_Delay(2000);
 

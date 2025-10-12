@@ -36,7 +36,7 @@ uint8_t erreurs_4_fois[nb_erreurs_4_fois/4];       // Nb d'erreurs dÃ©ja envoy
 uint8_t nb_reset=0;
 
 
-extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef hlpuart1;
 extern QueueHandle_t Event_QueueHandle;
 extern osThreadId_t defaultTaskHandle;
 extern osThreadId_t Appli_TaskHandle;
@@ -67,6 +67,19 @@ static void WatchdogTimerCallback(TimerHandle_t xTimer);
 static void Timer24hCallback(TimerHandle_t xTimer);
 static void Timer20minCallback(TimerHandle_t xTimer);
 
+void configure_uart_wakeup(void)
+{
+    // Configuration du réveil UART pour le mode Stop
+    UART_WakeUpTypeDef wakeup_config;
+    wakeup_config.WakeUpEvent = UART_WAKEUP_ON_READDATA_NONEMPTY;
+
+    // Configurer le réveil UART
+    HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, wakeup_config);
+
+    // Activer le mode Stop pour l'UART
+    HAL_UARTEx_EnableStopMode(&hlpuart1);
+}
+
 void init_functions(void)
 {
 	log_init();
@@ -78,7 +91,7 @@ void init_functions(void)
 
 
 	// Afficher la cause du reset au démarrage
-	//display_reset_cause();
+	display_reset_cause();
 
 
 	// creation timers
@@ -101,11 +114,38 @@ void init_functions(void)
 		    );
 		    if (HTimer_20min != NULL) xTimerStart(HTimer_20min, 0);
 
-	// Initialisation du système de watchdog
+	// Initialisation du système de watchdog logiciel
 	watchdog_init();
+
+#ifdef mode_sleep
+	configure_uart_wakeup();
+#endif
+
 
 }
 
+// Dans PreSleepProcessing
+/*void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
+{
+    if (*ulExpectedIdleTime >= 2)
+    {
+        // ⭐ METTRE LE RADIO EN VEILLE AVANT LE STOP
+        //subghz_enter_sleep_mode();
+
+        // Entrer en mode Stop
+        PWR_EnterStopMode();
+    }
+}
+
+// Dans PostSleepProcessing
+void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
+{
+    // ⭐ RÉVEILLER LE RADIO APRÈS LE STOP
+    //subghz_wake_up();
+
+    PWR_ExitStopMode();
+    *ulExpectedIdleTime = 0;
+}*/
 
 static void Timer24hCallback(TimerHandle_t xTimer)
 {
@@ -717,7 +757,7 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     int len = snprintf(msg, sizeof(msg), "-- Stack overflow in task: %s\r\n", pcTaskName);
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
 
     HAL_Delay(2000);
     NVIC_SystemReset();
@@ -731,7 +771,7 @@ void vApplicationMallocFailedHook(void)
     char msg[] = "-- Malloc failed!\r\n";
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg)-1, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg)-1, HAL_MAX_DELAY);
 
     HAL_Delay(2000);
     NVIC_SystemReset();

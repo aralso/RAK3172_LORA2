@@ -68,7 +68,7 @@ extern uint8_t err_donnee1, err_donnee2;
 #define log_w_err_uart_bloque	0x01
 
 #define UART_SEND(msg) do { \
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
     HAL_Delay(100); \
 } while(0)
 
@@ -109,7 +109,7 @@ void debug_uart_complete(void);
 #define LOG_VERBOSE(...) print_log(LOG_LEVEL_VERBOSE, __VA_ARGS__)
 
 extern osThreadId_t Uart_TX_TaskHandle;
-extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef hlpuart1;
 extern SUBGHZ_HandleTypeDef hsubghz;
 extern HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length, uint8_t dest);
 extern QueueHandle_t in_message_queue;  // queue pour les messages entrants

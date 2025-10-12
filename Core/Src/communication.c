@@ -48,7 +48,7 @@ static SemaphoreHandle_t log_mutex = NULL;
 
 extern SUBGHZ_HandleTypeDef hsubghz;
 
-extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef hlpuart1;
 
 static uint8_t rx_char;
 static uint8_t expected_length = 0;
@@ -57,9 +57,9 @@ static in_message_t mess_rx_uart;
 static uint8_t car_valid;
 static uint8_t buffer_index = 0;
 
-static uint8_t uart_rx_buffer[UART_RX_BUFFER_SIZE];
-static uint16_t uart_rx_head = 0;
-static uint16_t uart_rx_tail = 0;
+//static uint8_t uart_rx_buffer[UART_RX_BUFFER_SIZE];
+//static uint16_t uart_rx_head = 0;
+//static uint16_t uart_rx_tail = 0;
 static QueueHandle_t uart_rx_queue;
 uint8_t uart_rx_char;
 
@@ -167,15 +167,15 @@ uint8_t init_communication(void)
 
   /* HAL_NVIC_SetPriority(USART2_IRQn, 5, 0);
    HAL_NVIC_EnableIRQ(USART2_IRQn);
-   SET_BIT(huart2.Instance->CR1, USART_CR1_RXFFIE); // Interrupt avec Fifo
-   SET_BIT(huart2.Instance->CR3, USART_CR3_RXFTIE); // Interrupt thresold avec Fifo*/
+   SET_BIT(hlpuart1.Instance->CR1, USART_CR1_RXFFIE); // Interrupt avec Fifo
+   SET_BIT(hlpuart1.Instance->CR3, USART_CR3_RXFTIE); // Interrupt thresold avec Fifo*/
 
-   //SET_BIT(huart2.Instance->CR1, USART_CR1_RXNEIE_RXFNEIE);  // RXNE interrupt
+   //SET_BIT(hlpuart1.Instance->CR1, USART_CR1_RXNEIE_RXFNEIE);  // RXNE interrupt
 
    // Démarrer la réception par interruption
-   //HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+   //HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
 
-   //HAL_UART_Transmit(&huart2, (uint8_t*)"Init2", 5, 3000);
+   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Init2", 5, 3000);
    //HAL_Delay(500);
    return 0;
 }
@@ -199,10 +199,10 @@ Binaire : 12SLO => lg=2 (en fait 6)  B1 02 53 4C 4F
         // Écho du caractère reçu
         uint8_t uart_tx_char = 0;
         uart_tx_char = uart_rx_char+1;
-        HAL_UART_Transmit(&huart2, &uart_tx_char, 1, 1000);
+        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);
 
         // Redémarrer la réception - TOUJOURS À LA FIN
-        HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
     }
 }*/
 
@@ -226,21 +226,21 @@ Binaire : 12SLO => lg=2 (en fait 6)  B1 02 53 4C 4F
     // ✅ Pas de traitement complexe
 
     // Juste relancer la réception
-    //HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+    //HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
 }*/
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     //BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if (huart->Instance == USART2) {
+    if (huart->Instance == LPUART1) {
         // Traitement du caractère reçu (sans transmission bloquante)
         // Le caractère est disponible dans uart_rx_char
 
         // Écho du caractère reçu
-        //uint8_t uart_tx_char = 0;
-        //uart_tx_char = uart_rx_char+1;
-        //HAL_UART_Transmit(&huart2, &uart_tx_char, 1, 1000);
+        /*uint8_t uart_tx_char = 0;
+        uart_tx_char = uart_rx_char+1;
+        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);*/
 
 
         //if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, &xHigherPriorityTaskWoken))
@@ -251,7 +251,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
         // Redémarrer la réception - TOUJOURS À LA FIN
-        HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
     }
 }
 
@@ -261,7 +261,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     cpt_rx_uart++;
-    HAL_UART_Transmit(&huart2, &uart_rx_char, 1, 3000);
+    HAL_UART_Transmit(&hlpuart1, &uart_rx_char, 1, 3000);
 
     if (huart->Instance == USART2) {
         // Ajouter le caractère au buffer circulaire
@@ -280,7 +280,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         }
 
         // Relancer la réception pour le prochain caractère
-        HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
     }
 
     // Forcer le changement de contexte si nécessaire
@@ -289,14 +289,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART2) {
+    if (huart->Instance == LPUART1) {
         //LOG_ERROR("UART2 error: 0x%08lX", huart->ErrorCode);
     	code_erreur = ISR_fifo_full;
     	err_donnee1 = huart->ErrorCode;
 
         // Réinitialiser la réception
-        HAL_UART_AbortReceive_IT(&huart2);
-        HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+        HAL_UART_AbortReceive_IT(&hlpuart1);
+        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
     }
 }
 
@@ -305,7 +305,7 @@ void Uart_RX_Tsk(void *argument)
 
     // Démarrer la surveillance watchdog
     watchdog_task_start(WATCHDOG_TASK_UART_RX);
-    //HAL_UART_Transmit(&huart2, (uint8_t*)"Init4", 5, 3000);
+    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"Init4", 5, 3000);
     //HAL_Delay(500);
 
     //LOG_INFO("Uart_RX_Task started with watchdog protection");
@@ -319,16 +319,16 @@ void Uart_RX_Tsk(void *argument)
 
         watchdog_set_context(WATCHDOG_TASK_UART_RX, WATCHDOG_CONTEXT_WAITING);
 
-        if (xQueueReceive(uart_rx_queue, &rx_char, pdMS_TO_TICKS(100)) == pdPASS)
+        if (xQueueReceive(uart_rx_queue, &rx_char, osWaitForever) == pdPASS)
         {
             watchdog_set_context(WATCHDOG_TASK_UART_RX, WATCHDOG_CONTEXT_ACTIVE);
 			/*k+=1;
 			if (!(k%250))
-			HAL_UART_Transmit(&huart2, &rx_char, 1, 3000);*/
+			HAL_UART_Transmit(&hlpuart1, &rx_char, 1, 3000);*/
 
     		//k+=1;
     		//if (!(k%3))
-    			//HAL_UART_Transmit(&huart2, &rx_char, 1, 3000);
+    			//HAL_UART_Transmit(&hlpuart1, &rx_char, 1, 3000);
 
         	car_valid=1;
    		  //LOG_INFO("Received: 0x%02X ('%c')", rx_char, (rx_char >= 32 && rx_char <= 126) ? rx_char : '.');
@@ -465,7 +465,7 @@ void Uart_RX_Tsk(void *argument)
             }
 		}
 
-		osDelay(10);
+		//osDelay(10); // 1 car à 115200bauds = 0,1ms
 		//LOG_INFO(".");
 	}
   /* USER CODE END Uart1_Tsk */
@@ -503,8 +503,8 @@ void raz_Uart(uint8_t num_uart)  // raz car en reception (suite timeout)
 {
    expected_length = 0;
    buffer_index = 0;
-   uart_rx_head = 0;
-   uart_rx_tail = 0;
+   //uart_rx_head = 0;
+   //uart_rx_tail = 0;
    //xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout RX
 }
 
@@ -621,7 +621,7 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 			    //HAL_Delay(10);
 			    //char uart_msg[50];
 			    //snprintf(uart_msg, sizeof(uart_msg), "Lora1: %s \r\n", mess);
-			    //HAL_UART_Transmit(&huart2, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
+			    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
 			    //HAL_Delay(10);
 			    //UART_SEND("Send1\n\r");
 			  //retc = send_lora_message((const char*) mess, len, destinataire);
@@ -630,7 +630,7 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 			    //HAL_Delay(10);
 			    //char uart_msg[50];
 			    //snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
-			    //HAL_UART_Transmit(&huart2, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
+			    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
 			    //HAL_Delay(10);
 			  //retc = send_lora_message((const char*)mess, len,  table_routage[i][3]);
   		   }
@@ -667,7 +667,7 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
     /*HAL_Delay(10);
     char uart_msg[50];
     snprintf(uart_msg, sizeof(uart_msg), "Uart send1: %i \r\n", free_space);
-    HAL_UART_Transmit(&huart2, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
     HAL_Delay(10);*/
     //UART_SEND("Send1\n\r");
 
@@ -677,7 +677,7 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
 		    /*HAL_Delay(10);
 		    char uart_msg[50];
 		    snprintf(uart_msg, sizeof(uart_msg), "Uart Att: %i \r\n", free_space);
-		    HAL_UART_Transmit(&huart2, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
+		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
 		    HAL_Delay(10);*/
 	        //UART_SEND("SendAtt\n\r");
         osDelay(100);  // Attendre 100ms
@@ -805,7 +805,7 @@ void Uart_TX_Tsk(void *argument)
 		    //LOG_INFO("Uart_TX_Task: %i free", stack_high_water_mark);
 		    char uart_msg[50];
 		    snprintf(uart_msg, sizeof(uart_msg), "Uart stk: %lu \r\n", stack_high_water_mark);
-		    HAL_UART_Transmit(&huart2, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
+		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
 		    HAL_Delay(100);
 
             osDelay(3000); // Attendre 3 seconde
@@ -821,7 +821,7 @@ void Uart_TX_Tsk(void *argument)
             //LOG_INFO("UART TX message dequeue lg:%d st:%s", len, msg);
             //osDelay(300);
             // Envoi bloquant : la tâche attend
-            HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, msg, len, 10000);
+            HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, msg, len, 10000);
             if (status) { code_erreur = code_erreur_envoi;err_donnee1=status; err_donnee2=len;}
             //osDelay(300);
             //LOG_INFO("UART TX failed: %d", status);
@@ -940,7 +940,7 @@ void print_log(uint8_t level, const char* format, ...)
 		//len_ASC+=2;
 
 		// Envoyer via UART
-		//HAL_UART_Transmit(&huart2, (uint8_t*)log_buffer, strlen(log_buffer), 3000);
+		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)log_buffer, strlen(log_buffer), 3000);
 		//envoie_mess_ASC("%s", log_buffer);
 		len_ASC = strlen((char*)log_buffer);
 		envoie_routage(log_buffer, len_ASC);
@@ -1160,7 +1160,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ( (message_in[4] =='W') && (message_in[5] =='a') && (longueur_m==6))  // SLWa  Watchdog etat
             	  watchdog_print_status();
 
-              if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // SLWa  Reset cause et diagnostic
+              if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // SLRe  Reset cause et diagnostic
             	  display_reset_cause();
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Test eeprom/log_flash
@@ -1328,16 +1328,16 @@ void debug_uart_config(void)
     LOG_INFO("=== UART CONFIG DEBUG ===");
 
     // Vérifier la configuration UART
-    LOG_INFO("UART BaudRate: %lu", huart2.Init.BaudRate);
-    LOG_INFO("UART WordLength: %d", huart2.Init.WordLength);
-    LOG_INFO("UART StopBits: %d", huart2.Init.StopBits);
-    LOG_INFO("UART Parity: %d", huart2.Init.Parity);
-    LOG_INFO("UART Mode: %d", huart2.Init.Mode);
+    LOG_INFO("UART BaudRate: %lu", hlpuart1.Init.BaudRate);
+    LOG_INFO("UART WordLength: %d", hlpuart1.Init.WordLength);
+    LOG_INFO("UART StopBits: %d", hlpuart1.Init.StopBits);
+    LOG_INFO("UART Parity: %d", hlpuart1.Init.Parity);
+    LOG_INFO("UART Mode: %d", hlpuart1.Init.Mode);
 
     // Vérifier les registres UART
-    LOG_INFO("UART CR1: 0x%08lX", huart2.Instance->CR1);
-    LOG_INFO("UART CR2: 0x%08lX", huart2.Instance->CR2);
-    LOG_INFO("UART CR3: 0x%08lX", huart2.Instance->CR3);
+    LOG_INFO("UART CR1: 0x%08lX", hlpuart1.Instance->CR1);
+    LOG_INFO("UART CR2: 0x%08lX", hlpuart1.Instance->CR2);
+    LOG_INFO("UART CR3: 0x%08lX", hlpuart1.Instance->CR3);
 }
 
 void debug_uart_registers(void)
@@ -1345,55 +1345,55 @@ void debug_uart_registers(void)
     LOG_INFO("=== UART REGISTERS DEBUG ===");
 
     // Registres de contrôle
-    LOG_INFO("CR1: 0x%08lX", huart2.Instance->CR1);
-    LOG_INFO("CR2: 0x%08lX", huart2.Instance->CR2);
-    LOG_INFO("CR3: 0x%08lX", huart2.Instance->CR3);
+    LOG_INFO("CR1: 0x%08lX", hlpuart1.Instance->CR1);
+    LOG_INFO("CR2: 0x%08lX", hlpuart1.Instance->CR2);
+    LOG_INFO("CR3: 0x%08lX", hlpuart1.Instance->CR3);
 
     // Registres de statut (STM32WL)
-    LOG_INFO("ISR: 0x%08lX", huart2.Instance->ISR);
-    LOG_INFO("RDR: 0x%02X", (uint8_t)huart2.Instance->RDR);
-    LOG_INFO("TDR: 0x%02X", (uint8_t)huart2.Instance->TDR);
+    LOG_INFO("ISR: 0x%08lX", hlpuart1.Instance->ISR);
+    LOG_INFO("RDR: 0x%02X", (uint8_t)hlpuart1.Instance->RDR);
+    LOG_INFO("TDR: 0x%02X", (uint8_t)hlpuart1.Instance->TDR);
 
     // Vérifier les bits d'interruption (STM32WL)
-    if (huart2.Instance->CR1 & USART_CR1_RXFFIE) {
+    if (hlpuart1.Instance->CR1 & USART_CR1_RXFFIE) {
         LOG_INFO("RXFF FIFO interrupt enabled");
     } else {
         LOG_ERROR("RXFF FIFO interrupt NOT enabled");
     }
 
-    if (huart2.Instance->CR1 & USART_CR1_TXFEIE) {
+    if (hlpuart1.Instance->CR1 & USART_CR1_TXFEIE) {
         LOG_INFO("TXFE FIFO interrupt enabled");
     } else {
         LOG_INFO("TXFE FIFO interrupt disabled");
     }
 
     // Vérifier les flags de statut (STM32WL)
-    if (huart2.Instance->ISR & USART_ISR_RXNE_RXFNE) {  // ✅ Correction
+    if (hlpuart1.Instance->ISR & USART_ISR_RXNE_RXFNE) {  // ✅ Correction
         LOG_INFO("RXNE_RXFNE flag set - data available");
     } else {
         LOG_INFO("RXNE_RXFNE flag clear - no data");
     }
 
-    if (huart2.Instance->ISR & USART_ISR_TXE_TXFNF) {  // ✅ Correction
+    if (hlpuart1.Instance->ISR & USART_ISR_TXE_TXFNF) {  // ✅ Correction
         LOG_INFO("TXE_TXFNF flag set - ready to transmit");
     } else {
         LOG_INFO("TXE_TXFNF flag clear - not ready");
     }
 
     // Vérifier les erreurs
-    if (huart2.Instance->ISR & USART_ISR_ORE) {
+    if (hlpuart1.Instance->ISR & USART_ISR_ORE) {
         LOG_ERROR("Overrun error flag set");
     }
 
-    if (huart2.Instance->ISR & USART_ISR_FE) {
+    if (hlpuart1.Instance->ISR & USART_ISR_FE) {
         LOG_ERROR("Framing error flag set");
     }
 
-    if (huart2.Instance->ISR & USART_ISR_NE) {
+    if (hlpuart1.Instance->ISR & USART_ISR_NE) {
         LOG_ERROR("Noise error flag set");
     }
 
-    if (huart2.Instance->ISR & USART_ISR_PE) {
+    if (hlpuart1.Instance->ISR & USART_ISR_PE) {
         LOG_ERROR("Parity error flag set");
     }
 }
@@ -1430,15 +1430,15 @@ void debug_uart_interrupt_init(void)
     LOG_INFO("=== UART INTERRUPT DEBUG ===");
 
     // 1. Vérifier que l'interruption est activée
-    if (__HAL_UART_GET_IT_SOURCE(&huart2, UART_IT_RXNE)) {
+    if (__HAL_UART_GET_IT_SOURCE(&hlpuart1, UART_IT_RXNE)) {
         LOG_INFO("UART RX interrupt enabled");
     } else {
         LOG_ERROR("UART RX interrupt NOT enabled");
     }
 
     // 2. Vérifier l'état de l'UART
-    LOG_INFO("UART state: %d", huart2.gState);
-    LOG_INFO("UART error: 0x%08lX", huart2.ErrorCode);
+    LOG_INFO("UART state: %d", hlpuart1.gState);
+    LOG_INFO("UART error: 0x%08lX", hlpuart1.ErrorCode);
 
     // 3. Vérifier la queue
     if (uart_rx_queue != NULL) {
@@ -1448,10 +1448,10 @@ void debug_uart_interrupt_init(void)
     }
 
     // 4. Vérifier la priorité d'interruption - VERSION SIMPLE
-    LOG_INFO("USART2 IRQ priority: %lu", NVIC_GetPriority(USART2_IRQn));
+    LOG_INFO("USART2 IRQ priority: %lu", NVIC_GetPriority(LPUART1_IRQn));
 
     // 5. Vérifier si l'interruption est activée
-    LOG_INFO("USART2 IRQ enabled: %s", NVIC_GetEnableIRQ(USART2_IRQn) ? "YES" : "NO");
+    LOG_INFO("USART2 IRQ enabled: %s", NVIC_GetEnableIRQ(LPUART1_IRQn) ? "YES" : "NO");
 }
 
 void test_uart_reception(void)
@@ -1459,10 +1459,10 @@ void test_uart_reception(void)
     LOG_INFO("=== UART RECEPTION TEST ===");
 
     // Vérifier l'état de l'UART
-    LOG_INFO("UART state before test: %d", huart2.gState);
+    LOG_INFO("UART state before test: %d", hlpuart1.gState);
 
     // Démarrer la réception
-    HAL_StatusTypeDef status = HAL_UART_Receive_IT(&huart2, &uart_rx_char, 1);
+    HAL_StatusTypeDef status = HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
     LOG_INFO("HAL_UART_Receive_IT status: %d", status);
 
     if (status == HAL_OK) {
@@ -1474,10 +1474,10 @@ void test_uart_reception(void)
     for(;;)
     {
 		// Vérifier l'état après
-		LOG_INFO("UART state after start: %d", huart2.gState);
+		LOG_INFO("UART state after start: %d", hlpuart1.gState);
 
 		// Vérifier les flags
-		if (huart2.Instance->ISR & USART_ISR_RXNE_RXFNE) {
+		if (hlpuart1.Instance->ISR & USART_ISR_RXNE_RXFNE) {
 			LOG_INFO("RXNE_RXFNE flag set - data available");
 		} else {
 			LOG_INFO("RXNE_RXFNE flag clear - no data");
@@ -1486,24 +1486,6 @@ void test_uart_reception(void)
     }
 }
 
-void test_uart_interrupt_manual(void)
-{
-    LOG_INFO("=== MANUAL UART INTERRUPT TEST ===");
-
-    // Simuler un caractère reçu
-    uart_rx_char = 0x41;  // 'A'
-
-    // Appeler manuellement le callback
-    LOG_INFO("Calling UART callback manually");
-    HAL_UART_RxCpltCallback(&huart2);
-
-    // Vérifier si le caractère a été traité
-    if (uart_rx_head != 0) {
-        LOG_INFO("Manual test successful - char processed");
-    } else {
-        LOG_ERROR("Manual test failed - char not processed");
-    }
-}
 
 void check_memory(void)
 {
@@ -1542,10 +1524,10 @@ void debug_uart_complete(void)
     debug_uart_registers();
 
     // 4. Test de réception
-    test_uart_reception();
+    //test_uart_reception();
 
     // 5. Test manuel
-    test_uart_interrupt_manual();
+    //test_uart_interrupt_manual();
 
     LOG_INFO("=== END UART DEBUG ===");
 }

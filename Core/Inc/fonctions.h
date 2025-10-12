@@ -10,11 +10,13 @@
 
 #include "main.h"
 #include <appli.h>
+#include <lora.h>
 #include <stdio.h>
 #include <stdarg.h>
 
 
 #define WATCHDOG
+#define mode_sleep
 
 // Structure pour les événements
 typedef struct {
@@ -39,7 +41,7 @@ typedef enum  {
 	EVENT_UART_RAZ
 } EventId_t;
 
-#define TIMER_PERIOD_MS  60000   // 50s
+#define TIMER_PERIOD_MS  120000   // 50s
 
 // Sources d'événements
 #define SOURCE_BUTTON           0x01
@@ -81,7 +83,7 @@ typedef struct {
 } watchdog_task_info_t;
 
 // Configuration du watchdog
-#define WATCHDOG_TIMEOUT_MS        30   // 60 secondes par défaut
+#define WATCHDOG_TIMEOUT_MS        22   // 60 secondes par défaut
 #define WATCHDOG_ERROR_THRESHOLD   3       // Nombre d'erreurs avant reset
 #define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 5 secondes
 
