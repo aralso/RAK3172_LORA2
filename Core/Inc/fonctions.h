@@ -13,7 +13,8 @@
 #include <lora.h>
 #include <stdio.h>
 #include <stdarg.h>
-
+#include <stdlib.h>
+#include "radio.h"
 
 #define WATCHDOG
 #define mode_sleep
@@ -38,10 +39,12 @@ typedef enum  {
 	EVENT_WATCHDOG_CHECK,
     EVENT_TIMER_24h,
     EVENT_TIMER_20min,
-	EVENT_UART_RAZ
+	EVENT_TIMER_LPTIM,
+	EVENT_UART_RAZ,
+	EVENT_CAD_DONE
 } EventId_t;
 
-#define TIMER_PERIOD_MS  120000   // 50s
+#define TIMER_PERIOD_MS  20000   // 50s
 
 // Sources d'événements
 #define SOURCE_BUTTON           0x01
@@ -87,6 +90,14 @@ typedef struct {
 #define WATCHDOG_ERROR_THRESHOLD   3       // Nombre d'erreurs avant reset
 #define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 5 secondes
 
+extern LPTIM_HandleTypeDef hlptim1;
+extern QueueHandle_t Event_QueueHandle;
+
+#define test_MAX 20
+extern uint8_t test_index;
+extern uint8_t test_var;
+extern uint32_t test_tab[test_MAX];
+
 // Fonctions du système watchdog
 void watchdog_init(void);
 void watchdog_task_heartbeat(watchdog_task_id_t task_id);
@@ -112,6 +123,8 @@ HAL_StatusTypeDef set_rtc_from_timestamp(uint32_t timestamp);
 HAL_StatusTypeDef set_rtc_date_from_string(const char* date_str);
 HAL_StatusTypeDef set_rtc_time_from_string(const char* time_str);
 void init_functions(void);
+void check_all_clocks(void);
+void test_stop_mode(void);
 
 
 

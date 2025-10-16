@@ -1256,7 +1256,25 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           {
               if ((message_in[3] == 'A') && (longueur_m==6))  // 1TAxx => test_val
             	  test_val = (message_in[4]-'0')*10 + (message_in[5]-'0');
+              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TB => print test_tab
+              {
+            	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
+            	  for (uint8_t i=0; i<test_index; i++)
+            	  {
+            		  LOG_INFO("ind:%i val:%u", i, test_tab[i]);
+            	  }
+              }
+              if ((message_in[3] == 'R') && (longueur_m==5))  // 1TR1 => envoi test radio
+              {
+            	  test_var=1;
+				// 1. Démarrer CAD
+				Radio.StartCad();
 
+				// 2. Attendre le résultat dans OnCadDone
+				// 3. Si canal libre, transmettre
+
+
+              }
           }
       }
   }
@@ -1532,3 +1550,28 @@ void debug_uart_complete(void)
     LOG_INFO("=== END UART DEBUG ===");
 }
 
+// Fonction de diagnostic - VERSION CORRIGÉE
+void diagnose_uart_wakeup(void)
+{
+    LOG_INFO("=== UART WAKEUP DIAGNOSIS ===");
+
+    // 1. Vérifier si l'interruption LPUART1 est activée
+    if (NVIC_GetEnableIRQ(LPUART1_IRQn)) {
+        LOG_INFO("LPUART1 IRQ: ENABLED");
+    } else {
+        LOG_ERROR("LPUART1 IRQ: DISABLED - CANNOT WAKE UP!");
+    }
+
+    // 2. Vérifier la priorité
+    uint32_t priority = NVIC_GetPriority(LPUART1_IRQn);
+    LOG_INFO("LPUART1 Priority: %lu", priority);
+
+    // 3. Vérifier l'état de l'UART - VERSION CORRIGÉE
+    LOG_INFO("LPUART1 gState: %d", hlpuart1.gState);
+    LOG_INFO("LPUART1 RxState: %d", hlpuart1.RxState);
+
+    // 4. Vérifier l'erreur
+    LOG_INFO("LPUART1 ErrorCode: %lu", hlpuart1.ErrorCode);
+
+    LOG_INFO("=============================");
+}

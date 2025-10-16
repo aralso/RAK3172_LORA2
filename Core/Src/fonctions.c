@@ -35,9 +35,11 @@ uint8_t erreurs_4_fois[nb_erreurs_4_fois/4];       // Nb d'erreurs dÃ©ja envoy
 
 uint8_t nb_reset=0;
 
+uint8_t test_index;
+uint8_t test_var;
+uint32_t test_tab[test_MAX];
 
 extern UART_HandleTypeDef hlpuart1;
-extern QueueHandle_t Event_QueueHandle;
 extern osThreadId_t defaultTaskHandle;
 extern osThreadId_t Appli_TaskHandle;
 extern osThreadId_t LORA_TX_TaskHandle;
@@ -63,6 +65,8 @@ TimerHandle_t HTimer_24h;
 TimerHandle_t HTimer_20min;
 TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du watchdog
 
+void SystemClock_Config(void);
+
 static void WatchdogTimerCallback(TimerHandle_t xTimer);
 static void Timer24hCallback(TimerHandle_t xTimer);
 static void Timer20minCallback(TimerHandle_t xTimer);
@@ -78,6 +82,7 @@ void configure_uart_wakeup(void)
 
     // Activer le mode Stop pour l'UART
     HAL_UARTEx_EnableStopMode(&hlpuart1);
+
 }
 
 void init_functions(void)
@@ -124,16 +129,41 @@ void init_functions(void)
 
 }
 
+// Mode Stop1(4uA) : horloges ok : LSE, LSI et APB    mode stop2 (3uA):APB arreté
+// LPTIM1 si prescaler=1, 33us/ticks => max : 2 sec
 // Dans PreSleepProcessing
-/*void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
+void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
-    if (*ulExpectedIdleTime >= 2)
+	if (test_index < test_MAX)
+	{
+		test_tab[test_index] = *ulExpectedIdleTime;
+		test_index++;
+	}
+
+	/*
+	    (*ulExpectedIdleTime) is set to 0 to indicate that PreSleepProcessing contains
+	    its own wait for interrupt or wait for event instruction and so the kernel vPortSuppressTicksAndSleep
+	    function does not need to execute the wfi instruction
+	  */
+	 *ulExpectedIdleTime = 0;
+
+	  /*Enter to sleep Mode using the HAL function HAL_PWR_EnterSLEEPMode with WFI instruction*/
+	  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+	if (*ulExpectedIdleTime >= 2)
     {
+
+    	//HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+
+
+    	//HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+
         // ⭐ METTRE LE RADIO EN VEILLE AVANT LE STOP
         //subghz_enter_sleep_mode();
 
         // Entrer en mode Stop
-        PWR_EnterStopMode();
+        //PWR_EnterStopMode();
     }
 }
 
@@ -143,9 +173,50 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
     // ⭐ RÉVEILLER LE RADIO APRÈS LE STOP
     //subghz_wake_up();
 
-    PWR_ExitStopMode();
-    *ulExpectedIdleTime = 0;
-}*/
+	  SystemClock_Config();
+	  (void) ulExpectedIdleTime;
+
+	test_var++;
+
+	//HAL_PWR_ExitSTOPMode();
+
+    //PWR_ExitStopMode();
+     //*ulExpectedIdleTime = 0;
+}
+
+void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
+{
+	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
+
+	if (hlptim->Instance == LPTIM1)
+    {
+		event_t evt = { EVENT_TIMER_LPTIM, 1, 1 }; // timer 1, evt1
+		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+		{
+			code_erreur = ISR_callback;
+			err_donnee1 = 1;
+		}
+    }
+}
+
+void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
+{
+	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
+
+    if (hlptim->Instance == LPTIM1) {
+
+        //BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        event_t evt = { EVENT_TIMER_LPTIM, 1, 2 }; // timer 1, evt2
+
+        if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+        {
+            code_erreur = ISR_callback;
+            err_donnee1 = 4;
+        }
+
+        //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
 
 static void Timer24hCallback(TimerHandle_t xTimer)
 {
@@ -164,6 +235,33 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 	{
 	    LOG_ERROR("Event queue full - message lost");
 	}
+}
+
+// ISR pour l'appui sur le bouton PA12
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == GPIO_PIN_12) {
+        // ⭐ VOTRE CODE ICI - Contexte d'interruption !
+
+        // ⚠️ ATTENTION : Contexte d'interruption - Code minimal !
+
+        // ✅ AUTORISÉ : Variables volatiles
+        //static volatile bool button_pressed = true;
+
+        // ✅ AUTORISÉ : Envoyer un event (ISR safe)
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        event_t evt = { EVENT_BUTTON, 0, 1 };
+
+        if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS)
+        {
+            code_erreur = ISR_callback;
+            err_donnee1 = 3;
+        }
+
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+        // ❌ INTERDIT : LOG_INFO(), osDelay(), etc.
+    }
 }
 
 /**
@@ -703,51 +801,6 @@ typedef struct {
 #define DIAGNOSTIC_MAGIC_NUMBER   0xDEADBEEF
 #define DIAGNOSTIC_DATA_ADDR      (0x20000000 + 0x2000)  // Adresse en RAM backup
 
-/**
- * @brief Sauvegarde des données de diagnostic en RAM backup
- */
-void save_diagnostic_data(void)
-{
-    static uint32_t reset_count = 0;
-    static uint32_t watchdog_errors = 0;
-
-    diagnostic_data_t *diag = (diagnostic_data_t*)DIAGNOSTIC_DATA_ADDR;
-
-    // Incrémenter le compteur de resets
-    reset_count++;
-
-    // Sauvegarder les données
-    diag->magic_number = DIAGNOSTIC_MAGIC_NUMBER;
-    diag->reset_count = reset_count;
-    diag->last_uptime_ms = HAL_GetTick();
-    diag->last_reset_cause = RCC->CSR;
-    diag->watchdog_errors = watchdog_errors;
-    diag->timestamp = HAL_GetTick();
-
-    LOG_DEBUG("Diag saved: reset_count=%lu, uptime=%lu ms",
-              reset_count, diag->last_uptime_ms);
-}
-
-/**
- * @brief Récupère et affiche les données de diagnostic sauvegardées
- */
-void load_diagnostic_data(void)
-{
-    diagnostic_data_t *diag = (diagnostic_data_t*)DIAGNOSTIC_DATA_ADDR;
-
-    // Vérifier si les données sont valides
-    if (diag->magic_number == DIAGNOSTIC_MAGIC_NUMBER) {
-        LOG_INFO("=== PREVIOUS SESSION DIAGNOSTIC ===");
-        LOG_INFO("Previous reset count: %lu", diag->reset_count);
-        LOG_INFO("Previous uptime: %lu ms", diag->last_uptime_ms);
-        LOG_INFO("Previous reset cause: %s", get_reset_cause_string(diag->last_reset_cause));
-        LOG_INFO("Watchdog errors: %lu", diag->watchdog_errors);
-        LOG_INFO("Last save timestamp: %lu ms", diag->timestamp);
-        LOG_INFO("=== END PREVIOUS SESSION ===");
-    } else {
-        LOG_INFO("No previous diag data found (first boot)");
-    }
-}
 
 
 // Hook appelé si une tâche dépasse sa pile
@@ -981,4 +1034,80 @@ HAL_StatusTypeDef set_rtc_from_timestamp(uint32_t timestamp)
              sTime.Hours, sTime.Minutes, sTime.Seconds);
 
     return HAL_OK;
+}
+
+void check_all_clocks(void)
+{
+    LOG_INFO("=== CLOCK DIAGNOSTIC ===");
+
+    // Horloges principales (pas de macro IS_CLK_ENABLED pour LSI/MSI)
+    LOG_INFO("MSI Clock: ENABLED (4MHz) - ~1mA");
+    LOG_INFO("LSI Clock: ENABLED (32kHz) - ~0.1µA");
+
+    // Horloges périphériques - MACROS QUI EXISTENT
+    LOG_INFO("GPIOA Clock: %s", __HAL_RCC_GPIOA_IS_CLK_ENABLED() ? "ENABLED" : "DISABLED");
+    LOG_INFO("LPUART1 Clock: %s", __HAL_RCC_LPUART1_IS_CLK_ENABLED() ? "ENABLED" : "DISABLED");
+    LOG_INFO("RTC Clock: %s", __HAL_RCC_RTCAPB_IS_CLK_ENABLED() ? "ENABLED" : "DISABLED");
+
+    // IWDG et RF n'ont pas de macro IS_CLK_ENABLED - on les affiche comme toujours actifs
+    LOG_INFO("IWDG Clock: ENABLED (always active)");
+    LOG_INFO("RF Clock: ENABLED (always active)");
+
+    // Tickless Idle
+    LOG_INFO("Tickless Idle: %s", configUSE_TICKLESS_IDLE ? "ENABLED" : "DISABLED");
+
+    // Estimation consommation
+    uint32_t consumption = 0;
+
+    // MSI toujours actif (horloge système)
+    consumption += 1000; // MSI 4MHz = ~1mA
+    LOG_INFO("MSI active: +1000µA (system clock)");
+
+    // IWDG et RF toujours actifs
+    consumption += 100; // RF clock
+    consumption += 10;  // IWDG clock
+    LOG_INFO("RF + IWDG: +110µA (always active)");
+
+    if (__HAL_RCC_GPIOA_IS_CLK_ENABLED()) {
+        consumption += 10; // GPIO clock
+        LOG_INFO("GPIOA clock: +10µA");
+    }
+
+    if (__HAL_RCC_LPUART1_IS_CLK_ENABLED()) {
+        consumption += 5; // LPUART clock
+        LOG_INFO("LPUART1 clock: +5µA");
+    }
+
+    LOG_INFO("Estimated consumption: %lu µA", consumption);
+    LOG_INFO("Your measurement: 1100 µA");
+
+    if (consumption > 1000) {
+        LOG_ERROR("HIGH CONSUMPTION DETECTED!");
+        LOG_ERROR("Main cause: MSI 4MHz active (~1mA)");
+    }
+
+    LOG_INFO("========================");
+}
+
+// Fonction de test du mode Stop
+void test_stop_mode(void)
+{
+    LOG_INFO("=== TEST MODE STOP ===");
+
+    uint32_t start_time = HAL_GetTick();
+
+    // Entrer en mode Stop manuellement
+    LOG_INFO("Entering Stop mode...");
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+    uint32_t end_time = HAL_GetTick();
+    uint32_t elapsed = end_time - start_time;
+
+    LOG_INFO("Exited Stop mode after %lu ms", elapsed);
+
+    if (elapsed < 10) {
+        LOG_ERROR("Stop mode NOT working - CPU stayed active!");
+    } else {
+        LOG_INFO("Stop mode working - CPU was in low power");
+    }
 }

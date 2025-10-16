@@ -77,6 +77,65 @@ void HAL_MspInit(void)
 }
 
 /**
+  * @brief LPTIM MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hlptim: LPTIM handle pointer
+  * @retval None
+  */
+void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
+{
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+  if(hlptim->Instance==LPTIM1)
+  {
+    /* USER CODE BEGIN LPTIM1_MspInit 0 */
+
+    /* USER CODE END LPTIM1_MspInit 0 */
+
+  /** Initializes the peripherals clocks
+  */
+    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LPTIM1;
+    PeriphClkInitStruct.Lptim1ClockSelection = RCC_LPTIM1CLKSOURCE_LSI;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    /* Peripheral clock enable */
+    __HAL_RCC_LPTIM1_CLK_ENABLE();
+    /* USER CODE BEGIN LPTIM1_MspInit 1 */
+
+    /* USER CODE END LPTIM1_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief LPTIM MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hlptim: LPTIM handle pointer
+  * @retval None
+  */
+void HAL_LPTIM_MspDeInit(LPTIM_HandleTypeDef* hlptim)
+{
+  if(hlptim->Instance==LPTIM1)
+  {
+    /* USER CODE BEGIN LPTIM1_MspDeInit 0 */
+
+    /* USER CODE END LPTIM1_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_LPTIM1_CLK_DISABLE();
+
+    /* LPTIM1 interrupt DeInit */
+    HAL_NVIC_DisableIRQ(LPTIM1_IRQn);
+    /* USER CODE BEGIN LPTIM1_MspDeInit 1 */
+
+    /* USER CODE END LPTIM1_MspDeInit 1 */
+  }
+
+}
+
+/**
   * @brief UART MSP Initialization
   * This function configures the hardware resources used in this example
   * @param huart: UART handle pointer
@@ -116,9 +175,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     GPIO_InitStruct.Alternate = GPIO_AF8_LPUART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    /* LPUART1 interrupt Init */
-    HAL_NVIC_SetPriority(LPUART1_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
     /* USER CODE BEGIN LPUART1_MspInit 1 */
 
     /* USER CODE END LPUART1_MspInit 1 */
@@ -249,6 +305,9 @@ void HAL_SUBGHZ_MspDeInit(SUBGHZ_HandleTypeDef* hsubghz)
     /* USER CODE END SUBGHZ_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_SUBGHZSPI_CLK_DISABLE();
+
+    /* SUBGHZ interrupt DeInit */
+    HAL_NVIC_DisableIRQ(SUBGHZ_Radio_IRQn);
     /* USER CODE BEGIN SUBGHZ_MspDeInit 1 */
 
     /* USER CODE END SUBGHZ_MspDeInit 1 */

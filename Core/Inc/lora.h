@@ -25,5 +25,6 @@
 
 void subghz_enter_sleep_mode(void);
 void subghz_wake_up(void);
+void configure_radio_parameters(void);
 
 #endif /* INC_LORA_H_ */

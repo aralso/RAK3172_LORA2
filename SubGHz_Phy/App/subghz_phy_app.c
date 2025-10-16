@@ -26,6 +26,7 @@
 #include "cmsis_os.h"
 
 /* USER CODE BEGIN Includes */
+#include "fonctions.h"
 
 /* USER CODE END Includes */
 
@@ -89,13 +90,15 @@ static void OnRxError(void);
 
 /* USER CODE BEGIN PFP */
 
+static void OnCadDone(bool channelActivityDetected);
+
 /* USER CODE END PFP */
 
 /* Exported functions ---------------------------------------------------------*/
 void SubghzApp_Init(void)
 {
   /* USER CODE BEGIN SubghzApp_Init_1 */
-
+	  RadioEvents.CadDone = OnCadDone;
   /* USER CODE END SubghzApp_Init_1 */
 
   /* Radio initialization */
@@ -109,6 +112,11 @@ void SubghzApp_Init(void)
 
   /* USER CODE BEGIN SubghzApp_Init_2 */
 
+  configure_radio_parameters();
+
+      // Démarrer la réception continue
+  Radio.Rx(0); // Timeout infini
+
   /* USER CODE END SubghzApp_Init_2 */
 }
 
@@ -120,33 +128,65 @@ void SubghzApp_Init(void)
 static void OnTxDone(void)
 {
   /* USER CODE BEGIN OnTxDone */
+	LOG_INFO("LoRa TX: Message envoyé");
+	    // Redémarrer la réception après transmission
+	    Radio.Rx(0);
+
   /* USER CODE END OnTxDone */
 }
 
 static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraSnr_FskCfo)
 {
   /* USER CODE BEGIN OnRxDone */
+	LOG_INFO("LoRa RX: %d bytes, RSSI: %d dBm, SNR: %d", size, rssi, LoraSnr_FskCfo);
+
+	    // Envoyer un événement à votre application
+	    // send_event(EVENT_LORA_RX, SOURCE_LORA, size);
+
+	    // Redémarrer la réception
+	    Radio.Rx(0);
+
   /* USER CODE END OnRxDone */
 }
 
 static void OnTxTimeout(void)
 {
   /* USER CODE BEGIN OnTxTimeout */
+	 LOG_ERROR("LoRa TX: Timeout");
+	    // Redémarrer la réception
+	 Radio.Rx(0);
   /* USER CODE END OnTxTimeout */
 }
 
 static void OnRxTimeout(void)
 {
   /* USER CODE BEGIN OnRxTimeout */
+	LOG_DEBUG("LoRa RX: Timeout");
+	    // Redémarrer la réception
+	Radio.Rx(0);
   /* USER CODE END OnRxTimeout */
 }
 
 static void OnRxError(void)
 {
   /* USER CODE BEGIN OnRxError */
+	LOG_ERROR("LoRa RX: Erreur");
+	// Redémarrer la réception
+	Radio.Rx(0);
   /* USER CODE END OnRxError */
 }
 
 /* USER CODE BEGIN PrFD */
+
+static void OnCadDone(bool channelActivityDetected)
+{
+	event_t evt = { EVENT_CAD_DONE, SOURCE_LORA, channelActivityDetected ? 1 : 0 };
+
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+	{
+		code_erreur = ISR_callback;
+		err_donnee1 = 2;
+	}
+}
 
 /* USER CODE END PrFD */

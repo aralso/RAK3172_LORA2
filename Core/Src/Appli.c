@@ -9,7 +9,7 @@
  mesure mode STOP, adresses LORA/Uart
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 
- v1.6 10/2025 : hlpuart1
+ v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
  v1.5 10/2025 : eeprom, log_flash, rtc, messages binaires, attente dans en_queue
  v1.4 09/2025 : fct : refonte reception uart, watchdog contextuel, traitement_rx, opti stack
  v1.3 09/2025 : fct : augmentation stack taches, erreur_freertos
@@ -30,6 +30,7 @@ Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 #include <lora.h>
 #include <eeprom_emul.h>
 #include <log_flash.h>
+#include "app_subghz_phy.h"
 #include "timers.h"
 #include "queue.h"
 #include <stdio.h>    // Pour sprintf
@@ -84,7 +85,35 @@ void Appli_Tsk(void *argument);
 
 void init1()  // avant KernelInitialize
 {
-	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
+      // 1ms / tick
+	  if (HAL_LPTIM_TimeOut_Start_IT(&hlptim1, 12000,0) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
+	  {
+	    Error_Handler();
+	  }
+	  // IT importantes :
+	  // HAL_LPTIM_TimeOut_Start_IT(period, timeout).démarre à 0, jusqu'à period, ARRM, puis redémarre à 0
+	  // s'arette au bout de timeout ticks.
+	  // HAL_LPTIM_Counter_Start_IT(ARRM) : démarre à start, IT CMPM et ARRM
+	  // HAL_LPTIM_OnePulse_Start_IT : 1 fois
+
+	  /* Disable autoreload write complete interrupt */
+	  __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
+	  //__HAL_LPTIM_ENABLE_IT(&hlptim1, LPTIM_IT_CMPOK);
+
+	  /* make sure that no LPUART transfer is on-going */
+	  while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET);
+
+	  UART_WakeUpTypeDef WakeUpSelection;
+	  WakeUpSelection.WakeUpEvent = UART_WAKEUP_ON_READDATA_NONEMPTY;
+	  if (HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, WakeUpSelection) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+
+	  __HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_WUF);  // Activation interruption WakeUp UArt from STop mode
+	  HAL_UARTEx_EnableStopMode(&hlpuart1);
+
+	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);  // Demarrage réception Uart1
 
 	  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
 	  init_msg[0] = dest_log;
@@ -148,6 +177,9 @@ void init3()
       HAL_Delay(500);
 
       init_functions();
+
+      /*Initialize timer and RTC*/
+      //UTIL_TIMER_Init();
 
 }
 
@@ -322,8 +354,7 @@ void startDefTsk()
     HAL_IWDG_Refresh(&hiwdg);
 
 
-    osDelay(1000); // Attendre 1 seconde entre chaque heartbeat
-
+    osDelay(10); // Attendre 1 seconde entre chaque heartbeat
 }
 
 void LORA_RXTsk(void *argument)
@@ -489,6 +520,8 @@ void Appli_Tsk(void *argument)
          else
             LOG_ERROR("Erreur EEPROM");
 
+    MX_SubGHz_Phy_Init();
+
 	#ifdef mode_sleep
 		uint8_t sleep_cmd = RADIO_SET_SLEEP;  // 0x84
 		HAL_SUBGHZ_ExecSetCmd(&hsubghz, sleep_cmd, NULL, 0);
@@ -538,14 +571,31 @@ void Appli_Tsk(void *argument)
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
 					// Actions pour bouton pressé
-					HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1); // Toggle LED
+					//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1); // Toggle LED
 
 					// Envoyer message LoRa
-					char messa[] = "Button pressed!";
-					send_lora_message((const char*)messa, 16, 'Q');
+					//char messa[] = "Button pressed!";
+					//send_lora_message((const char*)messa, 16, 'Q');
 					break;
 				}
 
+				case EVENT_CAD_DONE: {
+					LOG_INFO("Cad Done : %i", evt.type);
+					if (evt.type)
+					{  // canal occupé
+			            LOG_INFO("Canal occupé - Attendre avant retry");
+			            osDelay(2000 + (rand() % 2000)); // Délai aléatoire 1-3s
+			            Radio.StartCad(); // relancer startCad
+					}
+					else  //canal libre
+					{
+						uint8_t mess_lora[20] = "Mess LORA Test";
+						uint8_t length = strlen((char*)mess_lora);
+						Radio.Send(mess_lora, length);
+					}
+
+					break;
+				}
 				case EVENT_LORA_RX: {
 					LOG_INFO("LoRa message received event");
 					// Actions pour message LoRa reçu
@@ -640,8 +690,23 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
-					HAL_IWDG_Refresh(&hiwdg);
-					LOG_INFO("TIMER 60s event");
+					LOG_INFO("stop mode");
+					osDelay(300);
+					//check_all_clocks();
+
+					  /* enter STOP mode */
+					  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+					  SystemClock_Config_fromSTOP();
+
+					LOG_INFO("Reveil");
+					osDelay(300);
+
+					  /* Ensure that MSI is wake-up system clock */
+					  //__HAL_RCC_WAKEUPSTOP_CLK_CONFIG(RCC_STOP_WAKEUPCLOCK_MSI);
+
+					 // diagnose_uart_wakeup();
+					//test_stop_mode();
 					//osDelay(1000);
 					//check_stack_usage();
 					//uint8_t statut=envoie_mess_ASC("Message periodique 30s");
@@ -658,6 +723,13 @@ void Appli_Tsk(void *argument)
 					//LOG_INFO("Il reste %lu ticks avant la prochaine expir\n",
 					//	   (expiry > now) ? (expiry - now) : 0);
 					//osDelay(100);
+					break;
+				}
+				case EVENT_TIMER_LPTIM: {
+					if (evt.data==1)
+						envoie_mess_ASC("1LPTIM1\r\n");
+					else
+						envoie_mess_ASC("1LPTIM1 %i\r\n", evt.data);
 					break;
 				}
 				case EVENT_UART_RAZ: {

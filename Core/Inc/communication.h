@@ -62,6 +62,7 @@ extern uint8_t err_donnee1, err_donnee2;
 #define timeout_RX             0x24
 #define erreur_queue_appli     0x25
 #define ISR_fifo_full		   0x26
+#define ISR_callback		   0x27
 #define erreur_mess            0x2F
 
 // Code erreur pour log_write :
@@ -131,5 +132,6 @@ void envoi_code_erreur(void);
 void check_flash_config(void);
 void check_flash_permissions(void);
 void check_memory(void);
+void diagnose_uart_wakeup(void);
 
 #endif /* INC_COMMUNICATION_H_ */

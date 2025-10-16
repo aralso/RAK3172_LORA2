@@ -45,6 +45,8 @@
 /* Private variables ---------------------------------------------------------*/
 IWDG_HandleTypeDef hiwdg;
 
+LPTIM_HandleTypeDef hlptim1;
+
 UART_HandleTypeDef hlpuart1;
 
 RTC_HandleTypeDef hrtc;
@@ -68,8 +70,10 @@ static void MX_GPIO_Init(void);
 static void MX_IWDG_Init(void);
 static void MX_RTC_Init(void);
 static void MX_LPUART1_UART_Init(void);
+static void MX_LPTIM1_Init(void);
 void StartDefaultTask(void *argument);
 
+static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -111,6 +115,10 @@ int main(void)
   MX_IWDG_Init();
   MX_RTC_Init();
   MX_LPUART1_UART_Init();
+  MX_LPTIM1_Init();
+
+  /* Initialize interrupts */
+  MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
   MX_SUBGHZ_Init();
 
@@ -163,6 +171,38 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
   }
+
+}
+
+void SystemClock_Config_fromSTOP(void)
+{
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  uint32_t pFLatency = 0;
+  /* Get the Oscillators configuration from the internal RCC registers */
+  HAL_RCC_GetOscConfig(&RCC_OscInitStruct);
+  /* Wake up on HSI, re-enable HSI and PLL with HSI as source */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV4;
+  RCC_OscInitStruct.PLL.PLLN = 24;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* Get the clock prescalers configuration from the internal RCC registers */
+  HAL_RCC_GetClockConfig(&RCC_ClkInitStruct, &pFLatency);
+  /* Select PLL as system clock source */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_SYSCLK;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, pFLatency) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END 3 */
 }
 
@@ -211,6 +251,26 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief NVIC Configuration.
+  * @retval None
+  */
+static void MX_NVIC_Init(void)
+{
+  /* SUBGHZ_Radio_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(SUBGHZ_Radio_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(SUBGHZ_Radio_IRQn);
+  /* EXTI15_10_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  /* LPTIM1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(LPTIM1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(LPTIM1_IRQn);
+  /* LPUART1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(LPUART1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(LPUART1_IRQn);
+}
+
+/**
   * @brief IWDG Initialization Function
   * @param None
   * @retval None
@@ -236,6 +296,40 @@ static void MX_IWDG_Init(void)
   /* USER CODE BEGIN IWDG_Init 2 */
 
   /* USER CODE END IWDG_Init 2 */
+
+}
+
+/**
+  * @brief LPTIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_LPTIM1_Init(void)
+{
+
+  /* USER CODE BEGIN LPTIM1_Init 0 */
+
+  /* USER CODE END LPTIM1_Init 0 */
+
+  /* USER CODE BEGIN LPTIM1_Init 1 */
+
+  /* USER CODE END LPTIM1_Init 1 */
+  hlptim1.Instance = LPTIM1;
+  hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
+  hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV32;
+  hlptim1.Init.Trigger.Source = LPTIM_TRIGSOURCE_SOFTWARE;
+  hlptim1.Init.OutputPolarity = LPTIM_OUTPUTPOLARITY_HIGH;
+  hlptim1.Init.UpdateMode = LPTIM_UPDATE_IMMEDIATE;
+  hlptim1.Init.CounterSource = LPTIM_COUNTERSOURCE_INTERNAL;
+  hlptim1.Init.Input1Source = LPTIM_INPUT1SOURCE_GPIO;
+  hlptim1.Init.Input2Source = LPTIM_INPUT2SOURCE_GPIO;
+  if (HAL_LPTIM_Init(&hlptim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN LPTIM1_Init 2 */
+
+  /* USER CODE END LPTIM1_Init 2 */
 
 }
 
@@ -282,6 +376,7 @@ static void MX_LPUART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN LPUART1_Init 2 */
+  LPUART1_EXTI_ENABLE_IT();
 
   /* USER CODE END LPUART1_Init 2 */
 
