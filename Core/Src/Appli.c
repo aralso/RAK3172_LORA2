@@ -9,6 +9,7 @@
  mesure mode STOP, adresses LORA/Uart
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 
+ v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
  v1.5 10/2025 : eeprom, log_flash, rtc, messages binaires, attente dans en_queue
  v1.4 09/2025 : fct : refonte reception uart, watchdog contextuel, traitement_rx, opti stack
@@ -85,35 +86,13 @@ void Appli_Tsk(void *argument);
 
 void init1()  // avant KernelInitialize
 {
-      // 1ms / tick
-	  if (HAL_LPTIM_TimeOut_Start_IT(&hlptim1, 12000,0) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
-	  {
-	    Error_Handler();
-	  }
-	  // IT importantes :
-	  // HAL_LPTIM_TimeOut_Start_IT(period, timeout).démarre à 0, jusqu'à period, ARRM, puis redémarre à 0
-	  // s'arette au bout de timeout ticks.
-	  // HAL_LPTIM_Counter_Start_IT(ARRM) : démarre à start, IT CMPM et ARRM
-	  // HAL_LPTIM_OnePulse_Start_IT : 1 fois
-
-	  /* Disable autoreload write complete interrupt */
-	  __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
-	  //__HAL_LPTIM_ENABLE_IT(&hlptim1, LPTIM_IT_CMPOK);
 
 	  /* make sure that no LPUART transfer is on-going */
 	  while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET);
 
-	  UART_WakeUpTypeDef WakeUpSelection;
-	  WakeUpSelection.WakeUpEvent = UART_WAKEUP_ON_READDATA_NONEMPTY;
-	  if (HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, WakeUpSelection) != HAL_OK)
-	  {
-	    Error_Handler();
-	  }
-
-	  __HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_WUF);  // Activation interruption WakeUp UArt from STop mode
-	  HAL_UARTEx_EnableStopMode(&hlpuart1);
 
 	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);  // Demarrage réception Uart1
+
 
 	  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
 	  init_msg[0] = dest_log;
@@ -123,35 +102,52 @@ void init1()  // avant KernelInitialize
 	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
 	  HAL_Delay(500);
 
+      init_functions1();
+
+      if (HAL_LPTIM_Counter_Start_IT(&hlptim1, LSI_VALUE) != HAL_OK)
+      {
+        Error_Handler();
+      }
+
+
+	  /*if (HAL_LPTIM_TimeOut_Start_IT(&hlptim1, 8000,0) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
+	  {
+	    Error_Handler();
+	  }*/
+      /* Disable autoreload write complete interrupt */
+      __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
+
 }
 
-void init2()  // création queue, timer, semaphore, taches
+void init2()  // création queue, timer, semaphore
 {
 	  Event_QueueHandle = xQueueCreate(32, sizeof(event_t));
 
-	  size_t freeHeap = xPortGetFreeHeapSize();
+	  /*size_t freeHeap = xPortGetFreeHeapSize();
 	    char msgL[50];
 	    sprintf(msgL, "Free heap before tasks: %i bytes\r", freeHeap);
-	    HAL_Delay(500);
+	    //HAL_Delay(500);
 	    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
-	    HAL_Delay(500);
+	    //HAL_Delay(500);*/
 
-	    init_communication();
+	 init_functions2();  // timer freertos
+	 init_communication(); // tache uart
 
-	    /* creation of LORA_RX_Task */
-	    //LORA_RX_TaskHandle = osThreadNew(LORA_RXTsk, NULL, &LORA_RX_Task_attributes);
-
-	    /* creation of LORA_TX_Task */
-	    //LORA_TX_TaskHandle = osThreadNew(LORA_TXTsk, NULL, &LORA_TX_Task_attributes);
-
-	    /* creation of Appli_Task */
-	    Appli_TaskHandle = osThreadNew(Appli_Tsk, NULL, &Appli_Task_attributes);
 
 }
 
-void init3()
+void init3()   // taches
 {
-	  char msgL[50];
+    /* creation of LORA_RX_Task */
+    //LORA_RX_TaskHandle = osThreadNew(LORA_RXTsk, NULL, &LORA_RX_Task_attributes);
+
+    /* creation of LORA_TX_Task */
+    //LORA_TX_TaskHandle = osThreadNew(LORA_TXTsk, NULL, &LORA_TX_Task_attributes);
+
+    /* creation of Appli_Task */
+    Appli_TaskHandle = osThreadNew(Appli_Tsk, NULL, &Appli_Task_attributes);
+
+    /*char msgL[50];
 
 	  uint8_t code_err_tache=0;
       if (defaultTaskHandle == NULL) code_err_tache=1;
@@ -162,24 +158,88 @@ void init3()
       if (Uart_TX_TaskHandle == NULL) code_err_tache|=32;
 
       if (code_err_tache) {
-    	   HAL_Delay(500);
+    	   //HAL_Delay(500);
     	   sprintf(msgL, "erreur tache: %02X ", code_err_tache);
     	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
-    	   HAL_Delay(500);
+    	   //HAL_Delay(500);
           //LOG_ERROR("Failed to create Appli_Task");
           // La tâche n'a pas pu être créée
-      }
+      }*/
+
       // Après la création :
-      size_t freeHeap = xPortGetFreeHeapSize();
+      /*size_t freeHeap = xPortGetFreeHeapSize();
       sprintf(msgL, "Free heap after tasks: %i bytes\r", freeHeap);
-      HAL_Delay(500);
+      //HAL_Delay(500);
       HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
-      HAL_Delay(500);
+      //HAL_Delay(500); */
 
-      init_functions();
 
-      /*Initialize timer and RTC*/
-      //UTIL_TIMER_Init();
+}
+
+// Apres KernelStart, dans Appli_task
+void init4(void)
+{
+    init_functions4();  // watchdog, Log, eeprom
+
+
+    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitB", 5, 3000);
+    //HAL_Delay(500);
+
+      //osDelay(100);
+
+      // Vérifier la configuration flash
+      //check_flash_config();
+      //check_flash_permissions();
+      //osDelay(1000);
+
+      //osDelay(1000);
+
+
+      /*MX_SubGHz_Phy_Init();
+
+  	#ifdef mode_sleep
+  		uint8_t sleep_cmd = RADIO_SET_SLEEP;  // 0x84
+  		HAL_SUBGHZ_ExecSetCmd(&hsubghz, sleep_cmd, NULL, 0);
+
+  		LOG_INFO("SUBGHZ: Put to sleep at startup");
+  	#endif
+
+  		osDelay(1000);*/
+
+  		//LOG_INFO("SUBGHZ State: %d", hsubghz.State);
+  		//LOG_INFO("SUBGHZ DeepSleep: %d", hsubghz.DeepSleep);
+
+  		/*if (hsubghz.DeepSleep != SUBGHZ_DEEP_SLEEP_ENABLE) {
+  			LOG_INFO("SUBGHZ: pb sleep");
+  		    // SUBGHZ consomme 500-600µA !
+  		}*/
+      /*if (EEPROM_Init() == HAL_OK) {
+          LOG_INFO("eeprom initialisee");
+          osDelay(1000);
+          // Test simple
+          test_eeprom_simple();
+      } else {
+          LOG_ERROR("Erreur eeprom");
+      }*/
+
+    /*Initialize timer and RTC*/
+    //UTIL_TIMER_Init();
+
+    // 1ms / tick
+	/*  if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 32000) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
+	  {
+	    Error_Handler();
+	  }*/
+
+	  // IT importantes :
+	  // HAL_LPTIM_TimeOut_Start_IT(period, timeout).démarre à 0, jusqu'à period, ARRM, puis redémarre à 0
+	  // s'arette au bout de timeout ticks.
+	  // HAL_LPTIM_Counter_Start_IT(ARRM) : démarre à start, IT CMPM et ARRM
+	  // HAL_LPTIM_OnePulse_Start_IT : 1 fois
+
+	  /* Disable autoreload write complete interrupt */
+	  __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
+	  //__HAL_LPTIM_ENABLE_IT(&hlptim1, LPTIM_IT_CMPOK);
 
 }
 
@@ -492,62 +552,21 @@ void LORA_TXTsk(void *argument)
 /* USER CODE END Header_Appli_Tsk */
 void Appli_Tsk(void *argument)
 {
-  /* USER CODE BEGIN Appli_Tsk */
-  // Démarrer la surveillance watchdog pour cette tâche
-	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
-	   //HAL_Delay(500);
-
-  watchdog_task_start(WATCHDOG_TASK_APPLI);
-  //LOG_INFO("Appli_Task started with watchdog protection");
-
-  //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitB", 5, 3000);
-  //HAL_Delay(500);
-
     event_t evt;
     osStatus_t status;
 
-    osDelay(100);
+  /* USER CODE BEGIN Appli_Tsk */
 
-    // Vérifier la configuration flash
-    //check_flash_config();
-    //check_flash_permissions();
-    //osDelay(1000);
+    init4(); // watchdog, Log, eeprom, demarrage LPTIM1
 
-    //osDelay(1000);
+    // Démarrer la surveillance watchdog pour cette tâche
+  	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
+  	   //HAL_Delay(500);
+	watchdog_task_start(WATCHDOG_TASK_APPLI);
+    //LOG_INFO("Appli_Task started with watchdog protection");
+	//uint16_t event_count;
 
-    if (EEPROM_Init() == HAL_OK)
-            LOG_INFO("EEPROM initialisee");
-         else
-            LOG_ERROR("Erreur EEPROM");
-
-    MX_SubGHz_Phy_Init();
-
-	#ifdef mode_sleep
-		uint8_t sleep_cmd = RADIO_SET_SLEEP;  // 0x84
-		HAL_SUBGHZ_ExecSetCmd(&hsubghz, sleep_cmd, NULL, 0);
-
-		LOG_INFO("SUBGHZ: Put to sleep at startup");
-	#endif
-
-		osDelay(1000);
-
-		LOG_INFO("SUBGHZ State: %d", hsubghz.State);
-		LOG_INFO("SUBGHZ DeepSleep: %d", hsubghz.DeepSleep);
-
-		/*if (hsubghz.DeepSleep != SUBGHZ_DEEP_SLEEP_ENABLE) {
-			LOG_INFO("SUBGHZ: pb sleep");
-		    // SUBGHZ consomme 500-600µA !
-		}*/
-    /*if (EEPROM_Init() == HAL_OK) {
-        LOG_INFO("eeprom initialisee");
-        osDelay(1000);
-        // Test simple
-        test_eeprom_simple();
-    } else {
-        LOG_ERROR("Erreur eeprom");
-    }*/
-
-    for(;;)
+	for(;;)
     {
         // Enregistrer un heartbeat pour le watchdog
         watchdog_task_heartbeat(WATCHDOG_TASK_APPLI);
@@ -560,13 +579,17 @@ void Appli_Tsk(void *argument)
         watchdog_set_context(WATCHDOG_TASK_APPLI, WATCHDOG_CONTEXT_ACTIVE);
 
         if (status == osOK)
-        {
+        //{
 			// Traiter l'événement reçu
 			//LOG_DEBUG("Processing event: type=%d, source=%d, data=%d",
 			//		  evt.type, evt.source, evt.data);
 			//osDelay(30);
 
-			switch (evt.type) {
+        //while (xQueueReceive(Event_QueueHandle, &evt, 0) == pdPASS)
+        {
+        	//event_count++;
+            //LOG_INFO("Événement #%i: type=%d", event_count, evt.type);
+        	switch (evt.type) {
 
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
@@ -690,17 +713,19 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
-					LOG_INFO("stop mode");
-					osDelay(300);
+					LOG_INFO("timer 20s");
+					//osDelay(300);
 					//check_all_clocks();
 
-					  /* enter STOP mode */
+					/*vTaskSuspendAll();  // Suspendre FreeRTOS
+					  // enter STOP mode
 					  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 
 					  SystemClock_Config_fromSTOP();
 
+					  xTaskResumeAll();  // Reprendre FreeRTOS
 					LOG_INFO("Reveil");
-					osDelay(300);
+					osDelay(300);*/
 
 					  /* Ensure that MSI is wake-up system clock */
 					  //__HAL_RCC_WAKEUPSTOP_CLK_CONFIG(RCC_STOP_WAKEUPCLOCK_MSI);
@@ -719,7 +744,7 @@ void Appli_Tsk(void *argument)
 					// Debug : afficher le temps restant avant la prochaine expiration
 					//TickType_t expiry = xTimerGetExpiryTime(HTimer_20min);
 					//TickType_t now = xTaskGetTickCount();
-					osDelay(100);
+					//osDelay(100);
 					//LOG_INFO("Il reste %lu ticks avant la prochaine expir\n",
 					//	   (expiry > now) ? (expiry - now) : 0);
 					//osDelay(100);
@@ -748,10 +773,10 @@ void Appli_Tsk(void *argument)
 	        if (code_erreur)
 	            envoi_code_erreur();
         }
-        else {
+        /*else {
             LOG_ERROR("Failed to receive event: %d", status);
-        }
-        osDelay(100);
+        }*/
+        osDelay(10);
     }
 
   /* USER CODE END Appli_Tsk */

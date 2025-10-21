@@ -12,7 +12,6 @@
 #include <main.h>
 #include "cmsis_os.h"
 #include "timers.h"
-#include "queue.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -67,40 +66,26 @@ TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du wa
 
 void SystemClock_Config(void);
 
-static void WatchdogTimerCallback(TimerHandle_t xTimer);
-static void Timer24hCallback(TimerHandle_t xTimer);
-static void Timer20minCallback(TimerHandle_t xTimer);
+//static void WatchdogTimerCallback(TimerHandle_t xTimer);
+//static void Timer24hCallback(TimerHandle_t xTimer);
+//static void Timer20minCallback(TimerHandle_t xTimer);
 
 void configure_uart_wakeup(void)
 {
-    // Configuration du réveil UART pour le mode Stop
-    UART_WakeUpTypeDef wakeup_config;
-    wakeup_config.WakeUpEvent = UART_WAKEUP_ON_READDATA_NONEMPTY;
-
-    // Configurer le réveil UART
-    HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, wakeup_config);
-
-    // Activer le mode Stop pour l'UART
-    HAL_UARTEx_EnableStopMode(&hlpuart1);
 
 }
 
-void init_functions(void)
+// Avant KernerInitialize
+void init_functions1(void)
 {
-	log_init();
-    /*if (log_init() == HAL_OK)
-        LOG_INFO("LOG initialisee");
-     else
-        LOG_ERROR("Erreur LOG");*/
+}
 
-
-
-	// Afficher la cause du reset au démarrage
-	display_reset_cause();
-
+// Apres KernelInitialize : queue, mutex, timers
+void init_functions2(void)
+{
 
 	// creation timers
-	 HTimer_24h = xTimerCreate(
+	 /*HTimer_24h = xTimerCreate(
 	        "Timer24h",                          // Nom
 	        24*3600*1000,     // Période en ticks
 	        pdTRUE,                             // Auto-reload
@@ -119,13 +104,36 @@ void init_functions(void)
 		    );
 		    if (HTimer_20min != NULL) xTimerStart(HTimer_20min, 0);
 
+		// Créer le timer de vérification du watchdog
+		HTimer_Watchdog = xTimerCreate(
+			"WatchdogTimer",                    // Nom
+			pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
+			pdTRUE,                            // Auto-reload
+			(void*)0,                          // ID
+			WatchdogTimerCallback              // Callback
+		);*/
+
+}
+
+void init_functions4(void)
+{
 	// Initialisation du système de watchdog logiciel
 	watchdog_init();
 
-#ifdef mode_sleep
-	configure_uart_wakeup();
-#endif
+	log_init();
+    /*if (log_init() == HAL_OK)
+        LOG_INFO("LOG initialisee");
+     else
+        LOG_ERROR("Erreur LOG");*/
 
+	EEPROM_Init();
+    /*if (EEPROM_Init() == HAL_OK)
+            LOG_INFO("EEPROM initialisee");
+         else
+            LOG_ERROR("Erreur EEPROM");*/
+
+	// Afficher la cause du reset au démarrage
+	//display_reset_cause();
 
 }
 
@@ -134,72 +142,100 @@ void init_functions(void)
 // Dans PreSleepProcessing
 void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
-	if (test_index < test_MAX)
-	{
-		test_tab[test_index] = *ulExpectedIdleTime;
-		test_index++;
-	}
 
-	/*
-	    (*ulExpectedIdleTime) is set to 0 to indicate that PreSleepProcessing contains
-	    its own wait for interrupt or wait for event instruction and so the kernel vPortSuppressTicksAndSleep
-	    function does not need to execute the wfi instruction
-	  */
-	 *ulExpectedIdleTime = 0;
-
-	  /*Enter to sleep Mode using the HAL function HAL_PWR_EnterSLEEPMode with WFI instruction*/
-	  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-
-	if (*ulExpectedIdleTime >= 2)
+#ifdef mode_sleep
+	if (*ulExpectedIdleTime >= 20)
     {
 
-    	//HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
-
-
-    	//HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-
-
-        // ⭐ METTRE LE RADIO EN VEILLE AVANT LE STOP
-        //subghz_enter_sleep_mode();
-
-        // Entrer en mode Stop
-        //PWR_EnterStopMode();
+    	HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
     }
+#endif
 }
 
 // Dans PostSleepProcessing
 void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
-    // ⭐ RÉVEILLER LE RADIO APRÈS LE STOP
-    //subghz_wake_up();
 
-	  SystemClock_Config();
+#ifdef mode_sleep
+	SystemClock_Config_FS();
 	  (void) ulExpectedIdleTime;
 
-	test_var++;
+	    // Remettre à jour la variable SystemCoreClock
+	    SystemCoreClockUpdate();
 
-	//HAL_PWR_ExitSTOPMode();
-
-    //PWR_ExitStopMode();
+	    // Réinitialiser le SysTick en fonction de la nouvelle HCLK
+	    HAL_InitTick(TICK_INT_PRIORITY);
+#endif
      //*ulExpectedIdleTime = 0;
 }
 
+// Presleep :
+/*if (test_index < test_MAX)
+{
+	test_tab[test_index] = *ulExpectedIdleTime;
+	test_index++;
+}*/
+
+/*
+    (*ulExpectedIdleTime) is set to 0 to indicate that PreSleepProcessing contains
+    its own wait for interrupt or wait for event instruction and so the kernel vPortSuppressTicksAndSleep
+    function does not need to execute the wfi instruction
+  */
+ //*ulExpectedIdleTime = 0;
+
+  /*Enter to sleep Mode using the HAL function HAL_PWR_EnterSLEEPMode with WFI instruction*/
+  //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+//HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+
+// ⭐ METTRE LE RADIO EN VEILLE AVANT LE STOP
+//subghz_enter_sleep_mode();
+
+// Entrer en mode Stop
+//PWR_EnterStopMode();
+
+// Postsleep :
+// ⭐ RÉVEILLER LE RADIO APRÈS LE STOP
+//subghz_wake_up();
+//test_var++;
+
+//HAL_PWR_ExitSTOPMode();
+
+//PWR_ExitStopMode();
+
 void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 {
+	/*  char init_msg[] = "Tim\n\r";
+	  uint16_t len = strlen(init_msg);
+	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);*/
+
+	static uint32_t counter = 0;
+
 	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
+
 
 	if (hlptim->Instance == LPTIM1)
     {
-		event_t evt = { EVENT_TIMER_LPTIM, 1, 1 }; // timer 1, evt1
-		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
-		{
-			code_erreur = ISR_callback;
-			err_donnee1 = 1;
+		counter++;
+
+		event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
+		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+			code_erreur = ISR_callback; 	err_donnee1 = 1; }
+
+		if (counter % 2 == 0) {  // Toutes les 20 secondes
+			event_t evt = { EVENT_TIMER_20min, 0, 0 };
+			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+				code_erreur = ISR_callback; 	err_donnee1 = 5; }
 		}
-    }
+
+		if (counter % 2 == 0) {  // Toutes les 20 secondes
+			event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
+			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+				code_erreur = ISR_callback; 	err_donnee1 = 6; }
+		}
+	 }
 }
 
-void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
+/*void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 {
 	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
 
@@ -216,9 +252,9 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
         //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
-}
+}*/
 
-static void Timer24hCallback(TimerHandle_t xTimer)
+/*static void Timer24hCallback(TimerHandle_t xTimer)
 {
     LOG_INFO("timer24h declenche");
 	event_t evt = { EVENT_TIMER_24h, 0, 0 };
@@ -230,12 +266,17 @@ static void Timer24hCallback(TimerHandle_t xTimer)
 
 static void Timer20minCallback(TimerHandle_t xTimer)
 {
+	  char init_msg[] = "Tim10s\n\r";
+	  uint16_t len = strlen(init_msg);
+	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
+
+    LOG_INFO("Timer 10s:calback");
 	event_t evt = { EVENT_TIMER_20min, 0, 0 };
 	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{
 	    LOG_ERROR("Event queue full - message lost");
 	}
-}
+}*/
 
 // ISR pour l'appui sur le bouton PA12
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -244,6 +285,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         // ⭐ VOTRE CODE ICI - Contexte d'interruption !
 
         // ⚠️ ATTENTION : Contexte d'interruption - Code minimal !
+  	  char init_msg[] = "Bouton PA12\n\r";
+  	  uint16_t len = strlen(init_msg);
+  	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
 
         // ✅ AUTORISÉ : Variables volatiles
         //static volatile bool button_pressed = true;
@@ -427,22 +471,14 @@ void watchdog_init(void)
         watchdog_tasks[i].context = WATCHDOG_CONTEXT_ACTIVE;  // Contexte par défaut
     }
 
-    // Créer le timer de vérification du watchdog
-    HTimer_Watchdog = xTimerCreate(
-        "WatchdogTimer",                    // Nom
-        pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
-        pdTRUE,                            // Auto-reload
-        (void*)0,                          // ID
-        WatchdogTimerCallback              // Callback
-    );
 
 	#ifdef WATCHDOG
-		if (HTimer_Watchdog != NULL) {
+		/*if (HTimer_Watchdog != NULL) {
 			xTimerStart(HTimer_Watchdog, 0);
 			//LOG_INFO("Watchdog timer started");
 		} else {
 			LOG_ERROR("Failed to create watchdog timer");
-		}
+		}*/
 	#endif
 }
 
@@ -495,7 +531,7 @@ void watchdog_set_timeout(watchdog_task_id_t task_id, uint32_t timeout_s)
 /**
  * @brief Callback du timer de watchdog
  */
-static void WatchdogTimerCallback(TimerHandle_t xTimer)
+/*static void WatchdogTimerCallback(TimerHandle_t xTimer)
 {
     //LOG_INFO("timer24h declenche");
 	event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
@@ -503,7 +539,7 @@ static void WatchdogTimerCallback(TimerHandle_t xTimer)
 	{
 	    LOG_ERROR("Event watch queue full - message lost");
 	}
-}
+}*/
 
 /**
  * @brief Démarre la surveillance d'une tâche

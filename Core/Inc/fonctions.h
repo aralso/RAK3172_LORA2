@@ -15,6 +15,8 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include "radio.h"
+#include "stm32wlxx_hal_exti.h"
+#include "queue.h"
 
 #define WATCHDOG
 #define mode_sleep
@@ -44,7 +46,7 @@ typedef enum  {
 	EVENT_CAD_DONE
 } EventId_t;
 
-#define TIMER_PERIOD_MS  20000   // 50s
+#define TIMER_PERIOD_MS  2000   // 50s
 
 // Sources d'événements
 #define SOURCE_BUTTON           0x01
@@ -122,7 +124,9 @@ void set_rtc_time_date(void);
 HAL_StatusTypeDef set_rtc_from_timestamp(uint32_t timestamp);
 HAL_StatusTypeDef set_rtc_date_from_string(const char* date_str);
 HAL_StatusTypeDef set_rtc_time_from_string(const char* time_str);
-void init_functions(void);
+void init_functions1(void);
+void init_functions2(void);
+void init_functions4(void);
 void check_all_clocks(void);
 void test_stop_mode(void);
 

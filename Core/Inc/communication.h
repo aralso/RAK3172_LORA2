@@ -70,7 +70,7 @@ extern uint8_t err_donnee1, err_donnee2;
 
 #define UART_SEND(msg) do { \
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
-    HAL_Delay(100); \
+    osDelay(100); \
 } while(0)
 
 
@@ -122,7 +122,6 @@ void set_log_level(uint8_t level);
 
 // Fonction pour obtenir le niveau actuel
 uint8_t get_log_level(void);
-void init_functions(void);
 uint8_t envoie_mess_ASC(const char* format, ...);
 uint8_t envoie_mess_bin(const uint8_t *buf);
 uint8_t deci (uint8_t val);

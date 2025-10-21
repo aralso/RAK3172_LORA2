@@ -72,4 +72,11 @@ HAL_StatusTypeDef EEPROM_GetStats(uint32_t *write_count, uint32_t *free_space);
 
 void test_eeprom_simple(void);
 
+/*__weak HAL_StatusTypeDef EEPROM_Write8(uint16_t address, uint8_t data)
+{ return 0; }
+__weak HAL_StatusTypeDef EEPROM_Read8(uint16_t address, uint8_t *data)
+{ return 0; }
+__weak HAL_StatusTypeDef EEPROM_Format(void) { return 0;}
+__weak HAL_StatusTypeDef EEPROM_GetStats(uint32_t *write_count, uint32_t *free_space) { return 0;}*/
+
 #endif /* INC_EEPROM_EMUL_H_ */

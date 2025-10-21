@@ -152,7 +152,7 @@ uint8_t init_communication(void)
 	}*/
 	//LOG_INFO("bufferMutex created: %p", bufferMutex);
 
-	UartSt[0].h_timeout_RX = xTimerCreate("TimeoutRX2", pdMS_TO_TICKS(10000), pdFALSE, ( void * ) 0, TIMEOUT_RX_Callback);  // name,period-tick, autoreload,id, callback
+	UartSt[0].h_timeout_RX = xTimerCreate("TimeoutRX2", pdMS_TO_TICKS(5000), pdFALSE, ( void * ) 0, TIMEOUT_RX_Callback);  // name,period-tick, autoreload,id, callback
 	//UartSt[0].h_timeout_TX = xTimerCreate("TimeoutTX2", pdMS_TO_TICKS(10000), pdFALSE, ( void * ) 0, TIMEOUT_TX_Callback);  // name,period-tick, autoreload,id, callback
 
 	/* creation of Uart_TX_Task */
@@ -231,16 +231,16 @@ Binaire : 12SLO => lg=2 (en fait 6)  B1 02 53 4C 4F
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    //BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     if (huart->Instance == LPUART1) {
         // Traitement du caractère reçu (sans transmission bloquante)
         // Le caractère est disponible dans uart_rx_char
 
         // Écho du caractère reçu
-        /*uint8_t uart_tx_char = 0;
+        uint8_t uart_tx_char = 0;
         uart_tx_char = uart_rx_char+1;
-        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);*/
+        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);
 
 
         //if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, &xHigherPriorityTaskWoken))
@@ -248,7 +248,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         	code_erreur = erreur_RX_queue;
 
         // Forcer le changement de contexte si nécessaire
-        //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
         // Redémarrer la réception - TOUJOURS À LA FIN
         HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
@@ -505,7 +505,7 @@ void raz_Uart(uint8_t num_uart)  // raz car en reception (suite timeout)
    buffer_index = 0;
    //uart_rx_head = 0;
    //uart_rx_tail = 0;
-   //xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout RX
+   xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout RX
 }
 
 
@@ -641,7 +641,7 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 }
 
 
-// Ajout d’un message
+// Ajout d’un message Uart_TX
 uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
 {
 
@@ -714,7 +714,7 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
 	//LOG_INFO("enqueue:head:%d tail:%d", head, tail);
     //osDelay(100);
     osMutexRelease(bufferMutex);
-
+    xTaskNotifyGive(Uart_TX_TaskHandle); // Notifier la tache UArt_TX
     return 0;
 }
 
@@ -784,6 +784,8 @@ void Uart_TX_Tsk(void *argument)
     uint8_t len;
     //uint32_t last_status_time = 0;
 
+    //osDelay(100);
+
     // Démarrer la surveillance watchdog pour cette tâche
     watchdog_task_start(WATCHDOG_TASK_UART_TX);
     //LOG_INFO("Uart_TX_Task started with watchdog protection");
@@ -793,52 +795,34 @@ void Uart_TX_Tsk(void *argument)
         // Enregistrer un heartbeat pour le watchdog
         watchdog_task_heartbeat(WATCHDOG_TASK_UART_TX);
         
-        /*uint32_t current_time = HAL_GetTick();
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // Afficher le statut du watchdog toutes les 5 minutes
-        if (current_time - last_status_time > 300000) {
-            //watchdog_print_status();
-            last_status_time = current_time;
-		    HAL_Delay(100);
-		    UBaseType_t stack_high_water_mark;
-		    stack_high_water_mark = uxTaskGetStackHighWaterMark(Uart_TX_TaskHandle);
-		    //LOG_INFO("Uart_TX_Task: %i free", stack_high_water_mark);
-		    char uart_msg[50];
-		    snprintf(uart_msg, sizeof(uart_msg), "Uart stk: %lu \r\n", stack_high_water_mark);
-		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
-		    HAL_Delay(100);
-
-            osDelay(3000); // Attendre 3 seconde
-    		//check_stack_usage();
-         }*/
-
-        uint8_t stat;
-        stat = mess_dequeue(msg, &len);
-        if (stat == 0)
+        while (1)
         {
-        	//LOG_INFO("U");
-            //osDelay(300);
-            //LOG_INFO("UART TX message dequeue lg:%d st:%s", len, msg);
-            //osDelay(300);
-            // Envoi bloquant : la tâche attend
-            HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, msg, len, 10000);
-            if (status) { code_erreur = code_erreur_envoi;err_donnee1=status; err_donnee2=len;}
-            //osDelay(300);
-            //LOG_INFO("UART TX failed: %d", status);
-            //osDelay(300);
-        }
-        else
-        {
-        	if (stat!=1)
-        	{
-        		code_erreur = code_erreur_dequeue;
-        		err_donnee1 = stat;
-        		err_donnee2 = len;
-        	}
-        }
+			uint8_t stat = mess_dequeue(msg, &len);
+
+			if (stat == 0) {
+				// ⭐ MESSAGE DISPONIBLE - Envoyer
+				HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, msg, len, 10000);
+				if (status != HAL_OK) {
+					code_erreur = code_erreur_envoi;
+					err_donnee1 = status;
+					err_donnee2 = len;
+				}
+			} else if (stat == 1) {
+				// ⭐ PAS DE MESSAGE (NORMAL) - Sortir de la boucle
+				break;
+			} else {
+				// ⭐ ERREUR DE mess_dequeue - Gérer l'erreur
+				code_erreur = code_erreur_dequeue;
+				err_donnee1 = stat;
+				err_donnee2 = len;
+				break;  // Sortir en cas d'erreur
+			}
+		}
         //osDelay(1000); // rien à envoyer → on laisse tourner le CPU
         //LOG_INFO(".");
-        osDelay(30); // rien à envoyer → on laisse tourner le CPU
+        //osDelay(30); // rien à envoyer → on laisse tourner le CPU
     }
 }
 
@@ -1256,7 +1240,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           {
               if ((message_in[3] == 'A') && (longueur_m==6))  // 1TAxx => test_val
             	  test_val = (message_in[4]-'0')*10 + (message_in[5]-'0');
-              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TB => print test_tab
+              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TT => print test_tab
               {
             	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
             	  for (uint8_t i=0; i<test_index; i++)
@@ -1500,7 +1484,7 @@ void test_uart_reception(void)
 		} else {
 			LOG_INFO("RXNE_RXFNE flag clear - no data");
 		}
-       HAL_Delay(5000);
+       osDelay(5000);
     }
 }
 

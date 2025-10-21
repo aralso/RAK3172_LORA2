@@ -60,9 +60,11 @@ void startDefTsk();
 void init1();
 void init2();
 void init3();
+void init4();
 void SystemClock_Config_fromSTOP(void);
 
 #define LPUART1_EXTI_ENABLE_IT()   (EXTI->IMR1 |= EXTI_IMR1_IM28)
+#define LPTIM1_EXTI_ENABLE_IT()   (EXTI->IMR1 |= EXTI_IMR1_IM29)
 
 /* USER CODE END EFP */
 

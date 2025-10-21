@@ -89,6 +89,12 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
   {
     /* USER CODE BEGIN LPTIM1_MspInit 0 */
 
+	    /* Force the LPTIM Peripheral Clock Reset */
+	    __HAL_RCC_LPTIM1_FORCE_RESET();
+
+	    /* Release the LPTIM Peripheral Clock Reset */
+	    __HAL_RCC_LPTIM1_RELEASE_RESET();
+
     /* USER CODE END LPTIM1_MspInit 0 */
 
   /** Initializes the peripherals clocks
@@ -170,13 +176,26 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     */
     GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;   // NOPULL
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF8_LPUART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* USER CODE BEGIN LPUART1_MspInit 1 */
+    HAL_NVIC_SetPriority(LPUART1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(LPUART1_IRQn);
 
+    // ⭐ AJOUTER LA CONFIGURATION EXTI POUR LE RÉVEIL
+    // Configuration EXTI pour PA3 (RX) - ligne 3
+    /*GPIO_InitTypeDef GPIO_InitStruct_EXTI = {0};
+    GPIO_InitStruct_EXTI.Pin = GPIO_PIN_3;
+    GPIO_InitStruct_EXTI.Mode = GPIO_MODE_IT_RISING;  // Interruption sur front montant
+    GPIO_InitStruct_EXTI.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct_EXTI);
+
+    // Activer l'interruption EXTI
+    HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(EXTI3_IRQn);*/
     /* USER CODE END LPUART1_MspInit 1 */
 
   }
