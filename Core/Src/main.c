@@ -20,10 +20,10 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "app_subghz_phy.h"
-#include "fonctions.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fonctions.h"
 #include <string.h>
 #include "stm32wlxx_hal_exti.h"
 
@@ -177,20 +177,19 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
 
-}
 
 // config de UUART_reveil_stopMode
-void SystemClock_ConfigUA(void)
+/*void SystemClock_ConfigUA(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage
-  */
+  // Configure the main internal regulator output voltage
+
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
+  // Initializes the CPU, AHB and APB buses clocks
+
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -205,8 +204,8 @@ void SystemClock_ConfigUA(void)
   {
     Error_Handler();
   }
-  /** Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
-  */
+  // Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
+
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3|RCC_CLOCKTYPE_HCLK
                               |RCC_CLOCKTYPE_SYSCLK|RCC_CLOCKTYPE_PCLK1
                               |RCC_CLOCKTYPE_PCLK2;
@@ -227,12 +226,12 @@ void SystemClock_Config_FS(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage
-  */
+  // Configure the main internal regulator output voltage
+
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
+  // Initializes the CPU, AHB and APB buses clocks
+
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
@@ -250,8 +249,8 @@ void SystemClock_Config_FS(void)
   {
     Error_Handler();
   }
-  /** Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
-  */
+  // Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
+
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3|RCC_CLOCKTYPE_HCLK
                               |RCC_CLOCKTYPE_SYSCLK|RCC_CLOCKTYPE_PCLK1
                               |RCC_CLOCKTYPE_PCLK2;
@@ -272,9 +271,9 @@ void SystemClock_Config_fromSTOP(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   uint32_t pFLatency = 0;
-  /* Get the Oscillators configuration from the internal RCC registers */
+  // Get the Oscillators configuration from the internal RCC registers
   HAL_RCC_GetOscConfig(&RCC_OscInitStruct);
-  /* Wake up on HSI, re-enable HSI and PLL with HSI as source */
+  // Wake up on HSI, re-enable HSI and PLL with HSI as source
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -287,15 +286,15 @@ void SystemClock_Config_fromSTOP(void)
   {
     Error_Handler();
   }
-  /* Get the clock prescalers configuration from the internal RCC registers */
+  // Get the clock prescalers configuration from the internal RCC registers
   HAL_RCC_GetClockConfig(&RCC_ClkInitStruct, &pFLatency);
-  /* Select PLL as system clock source */
+  // Select PLL as system clock source
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_SYSCLK;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, pFLatency) != HAL_OK)
   {
     Error_Handler();
-  }
+  }*/
   /* USER CODE END 3 */
 }
 
@@ -412,7 +411,7 @@ static void MX_LPTIM1_Init(void)
   /* USER CODE END LPTIM1_Init 1 */
   hlptim1.Instance = LPTIM1;
   hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
-  hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV4;
+  hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV16;
   hlptim1.Init.Trigger.Source = LPTIM_TRIGSOURCE_SOFTWARE;
   hlptim1.Init.OutputPolarity = LPTIM_OUTPUTPOLARITY_HIGH;
   hlptim1.Init.UpdateMode = LPTIM_UPDATE_IMMEDIATE;

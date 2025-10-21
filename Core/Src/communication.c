@@ -124,20 +124,20 @@ uint8_t mess_dequeue(uint8_t *data, uint8_t *len);
 // verification si des caractères uart_rx sont dans le buffer
 void verif_timout_uart_rx(void)
 {
-	if (uart_timeout_on)
-	{
 		//get_rtc_timestamp()
 	    uint32_t rtc_actuel = get_rtc_seconds_since_midnight();
+		//LOG_INFO("act:%i debut:%i", rtc_actuel, uart_timeout_rx);
 	    if (rtc_actuel - uart_timeout_rx > 10)
 	    {
-	    	event_t evt = { EVENT_UART_RAZ, 1, 0 };
+			code_erreur=timeout_RX;
+			raz_Uart(0);
+	    	/*event_t evt = { EVENT_UART_RAZ, 1, 0 };
 	    	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	    	{
-	    	    LOG_ERROR("erreur queue");
-	    	}
+	    		code_erreur = erreur_queue_appli;
+	    		err_donnee1 = 2;
+	    	}*/
 	    }
-	}
-
 }
 
 uint8_t init_communication(void)
@@ -423,7 +423,7 @@ void Uart_RX_Tsk(void *argument)
 							{  // envoi de l'evenement a la tache appli
 								event_t evt = {EVENT_UART_RX, SOURCE_UART, 0};
 								if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
-									code_erreur = erreur_queue_appli;
+									{ code_erreur = erreur_queue_appli; err_donnee1=3;}
 							}
                         }
                         // Réinitialiser
@@ -470,7 +470,7 @@ void Uart_RX_Tsk(void *argument)
                         {  // envoi de l'evenement a la tache appli
 			                event_t evt = {EVENT_UART_RX, SOURCE_UART, 0};
 			                if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
-	                            code_erreur = erreur_queue_appli;
+   								{ code_erreur = erreur_queue_appli; err_donnee1=4;}
                         }
 
                         // Réinitialiser

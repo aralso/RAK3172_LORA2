@@ -5,9 +5,10 @@
  *      Author: Tocqueville
 
 
- TODO : FIFO uart pleine
- mesure mode STOP, adresses LORA/Uart
+ TODO :
+, adresses LORA/Uart
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
+TODO BUG : timer apres uart_rx, HLH
 
  v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
@@ -104,7 +105,7 @@ void init1()  // avant KernelInitialize
 
       init_functions1();
 
-      if (HAL_LPTIM_Counter_Start_IT(&hlptim1, LSI_VALUE) != HAL_OK)
+      if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 20000) != HAL_OK)
       {
         Error_Handler();
       }
@@ -765,11 +766,11 @@ void Appli_Tsk(void *argument)
 					//osDelay(100);
 					break;
 				}
-				case EVENT_TIMER_LPTIM: {
-					if (evt.data==1)
+				case EVENT_TIMER_LPTIM: {  // chaque 10 secondes
+					/*if (evt.data==1)
 						envoie_mess_ASC("1LPTIM1\r\n");
 					else
-						envoie_mess_ASC("1LPTIM1 %i\r\n", evt.data);
+						envoie_mess_ASC("1LPTIM1 %i\r\n", evt.data);*/
 					break;
 				}
 				case EVENT_UART_RAZ: {

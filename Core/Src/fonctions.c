@@ -169,7 +169,9 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 	    HAL_InitTick(TICK_INT_PRIORITY);
 
 		if (uart_timeout_on)
-			verif_timout_uart_rx();
+		{
+			verif_timout_uart_rx();  // ne fonctionne pas
+		}
 #endif
      //*ulExpectedIdleTime = 0;
 }
@@ -945,6 +947,7 @@ void display_current_time(void)
 
     LOG_INFO("HL: %02d/%02d/20%02d %02d:%02d:%02d", sDate.Date, sDate.Month, sDate.Year, sTime.Hours, sTime.Minutes, sTime.Seconds);
     LOG_INFO("Timestamp: %08X", get_rtc_timestamp());
+    LOG_INFO("sec apres minuit: %i", get_rtc_seconds_since_midnight());
     //LOG_INFO("Timestamp: %lu", get_rtc_timestamp());
 }
 

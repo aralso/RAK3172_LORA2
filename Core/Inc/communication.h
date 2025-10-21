@@ -94,6 +94,7 @@ typedef struct {
 extern UartStruct UartSt[NB_UART];
 void reception_message_Uart2(in_message_t *msg);
 uint8_t envoie_routage( uint8_t *mess, uint8_t len);
+void verif_timout_uart_rx(void);
 
 
 // Fonction principale de logging
