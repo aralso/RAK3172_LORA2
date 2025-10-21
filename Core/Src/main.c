@@ -20,6 +20,7 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "app_subghz_phy.h"
+#include "fonctions.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -108,7 +109,7 @@ int main(void)
   /* USER CODE END Init */
 
   /* Configure the system clock */
-  SystemClock_Config_FS();
+  SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -313,10 +314,13 @@ void SystemClock_Config(void)
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_8;
   RCC_OscInitStruct.LSIDiv = RCC_LSI_DIV1;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
@@ -407,8 +411,7 @@ static void MX_LPTIM1_Init(void)
 
   /* USER CODE END LPTIM1_Init 1 */
   hlptim1.Instance = LPTIM1;
-  hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;  // LSE
-  //hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_ULPTIM;   // LSI
+  hlptim1.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
   hlptim1.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV4;
   hlptim1.Init.Trigger.Source = LPTIM_TRIGSOURCE_SOFTWARE;
   hlptim1.Init.OutputPolarity = LPTIM_OUTPUTPOLARITY_HIGH;
@@ -443,16 +446,16 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.BaudRate = 115200;
   hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
   hlpuart1.Init.StopBits = UART_STOPBITS_1;
   hlpuart1.Init.Parity = UART_PARITY_NONE;
   hlpuart1.Init.Mode = UART_MODE_TX_RX;
   hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  hlpuart1.Init.ClockPrescaler = UART_PRESCALER_DIV2;
+  hlpuart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
   hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  hlpuart1.FifoMode = UART_FIFOMODE_DISABLE;
+  hlpuart1.FifoMode = UART_FIFOMODE_ENABLE;
   if (HAL_UART_Init(&hlpuart1) != HAL_OK)
   {
     Error_Handler();
@@ -465,7 +468,7 @@ static void MX_LPUART1_UART_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_DisableFifoMode(&hlpuart1) != HAL_OK)
+  if (HAL_UARTEx_EnableFifoMode(&hlpuart1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -483,6 +486,9 @@ static void MX_LPUART1_UART_Init(void)
 		if (HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, wakeup_config) != HAL_OK) Error_Handler();
 
 	  __HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_WUF);  // Activation interruption WakeUp UArt from STop mode
+
+	  //__HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_RXNE);  // sans fifo
+	  __HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_RXFNE);  // avec fifo
 
 		// Activer le mode Stop pour l'UART
 		  HAL_UARTEx_EnableStopMode(&hlpuart1);    // enable MCU wake-up by LPUART
@@ -604,7 +610,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : PA12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 

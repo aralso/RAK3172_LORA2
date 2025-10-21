@@ -36,7 +36,9 @@ LOG en Flash => pb répétitions. Limiter à 4 / 10 minutes*/
 QueueHandle_t in_message_queue;  // queue pour les messages entrants
 
 // Timers
-TimerHandle_t timer_handles[2];
+//TimerHandle_t timer_handles[2];
+uint32_t uart_timeout_rx;
+uint8_t uart_timeout_on;
 
 uint16_t cpt_rx_uart;
 
@@ -108,7 +110,7 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len);
 uint8_t mess_dequeue(uint8_t *data, uint8_t *len);
 
 
-void TIMEOUT_RX_Callback(TimerHandle_t xTimer)
+/*void TIMEOUT_RX_Callback(TimerHandle_t xTimer)
 {
 	uint8_t num_uart = (uint8_t)(uint32_t)pvTimerGetTimerID(xTimer);  // timer_id
 
@@ -117,8 +119,26 @@ void TIMEOUT_RX_Callback(TimerHandle_t xTimer)
 	{
 	    LOG_ERROR("Event uart timeout - message lost");
 	}
-}
+}*/
 
+// verification si des caractères uart_rx sont dans le buffer
+void verif_timout_uart_rx(void)
+{
+	if (uart_timeout_on)
+	{
+		//get_rtc_timestamp()
+	    uint32_t rtc_actuel = get_rtc_seconds_since_midnight();
+	    if (rtc_actuel - uart_timeout_rx > 10)
+	    {
+	    	event_t evt = { EVENT_UART_RAZ, 1, 0 };
+	    	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+	    	{
+	    	    LOG_ERROR("erreur queue");
+	    	}
+	    }
+	}
+
+}
 
 uint8_t init_communication(void)
 {
@@ -152,7 +172,7 @@ uint8_t init_communication(void)
 	}*/
 	//LOG_INFO("bufferMutex created: %p", bufferMutex);
 
-	UartSt[0].h_timeout_RX = xTimerCreate("TimeoutRX2", pdMS_TO_TICKS(5000), pdFALSE, ( void * ) 0, TIMEOUT_RX_Callback);  // name,period-tick, autoreload,id, callback
+	//UartSt[0].h_timeout_RX = xTimerCreate("TimeoutRX2", pdMS_TO_TICKS(5000), pdFALSE, ( void * ) 0, TIMEOUT_RX_Callback);  // name,period-tick, autoreload,id, callback
 	//UartSt[0].h_timeout_TX = xTimerCreate("TimeoutTX2", pdMS_TO_TICKS(10000), pdFALSE, ( void * ) 0, TIMEOUT_TX_Callback);  // name,period-tick, autoreload,id, callback
 
 	/* creation of Uart_TX_Task */
@@ -238,9 +258,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         // Le caractère est disponible dans uart_rx_char
 
         // Écho du caractère reçu
-        uint8_t uart_tx_char = 0;
+        /*uint8_t uart_tx_char = 0;
         uart_tx_char = uart_rx_char+1;
-        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);
+        HAL_UART_Transmit(&hlpuart1, &uart_tx_char, 1, 1000);*/
 
 
         //if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, &xHigherPriorityTaskWoken))
@@ -359,7 +379,9 @@ void Uart_RX_Tsk(void *argument)
    			    if ((buffer_index==0) && ((rx_char)==0xB1))  rx_char=(My_Address|0x80);  // remplacement de 1 par mon adresse
 
             	mess_rx_uart.data[buffer_index++] = rx_char;
-   			    xTimerReset(UartSt[0].h_timeout_RX, 0); // timeout au bout de x secondes si on ne recoit pas la fin du message
+   			    //xTimerReset(UartSt[0].h_timeout_RX, 0); // timeout au bout de x secondes si on ne recoit pas la fin du message
+   			    uart_timeout_rx = get_rtc_seconds_since_midnight();
+   			    uart_timeout_on = 1;
 
 				#ifdef UART_AJOUT_EMETTEUR
 				  if (buffer_index==1)
@@ -375,7 +397,8 @@ void Uart_RX_Tsk(void *argument)
                     if ((rx_char == '\0') || (rx_char == 13))
                     {
                         // Message ASCII terminé
-   					    xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout
+                    	uart_timeout_on=0;
+   					    //xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout
    					    mess_rx_uart.length = buffer_index;
    					    mess_rx_uart.type = 0; // ASCII
    					    mess_rx_uart.source = 2; // UART2
@@ -431,7 +454,8 @@ void Uart_RX_Tsk(void *argument)
                     	//LOG_INFO("ok fin bin");
                     	//osDelay(100);
                         // Message binaire terminé
-   					    xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout
+                    	uart_timeout_on=0;
+   					    //xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout
    					    mess_rx_uart.length = buffer_index-1;
    					    mess_rx_uart.type = 1; // Binaire
    					    mess_rx_uart.source = 2; // UART2
@@ -505,7 +529,8 @@ void raz_Uart(uint8_t num_uart)  // raz car en reception (suite timeout)
    buffer_index = 0;
    //uart_rx_head = 0;
    //uart_rx_tail = 0;
-   xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout RX
+   uart_timeout_on=0;
+   //xTimerStop(UartSt[0].h_timeout_RX, 0);  // raz timeout RX
 }
 
 

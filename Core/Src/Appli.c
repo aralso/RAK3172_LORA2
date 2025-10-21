@@ -714,6 +714,21 @@ void Appli_Tsk(void *argument)
 
 					//LOG_INFO("a");
 					LOG_INFO("timer 20s");
+
+					//LOG_INFO("Entrée en mode Stop avec HSI...");
+					/*char init_msg[] = "mode stop\n\r";
+					  uint16_t len = strlen(init_msg);
+					  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
+
+					    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+					  SystemClock_Config();
+						char init_msg2[] = "Reveil\n\r";
+						  len = strlen(init_msg2);
+						  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg2, len, 500);*/
+
+					    //LOG_INFO("Réveil du mode Stop - HSI fonctionne !");
+
 					//osDelay(300);
 					//check_all_clocks();
 

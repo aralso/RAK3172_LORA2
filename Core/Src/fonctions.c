@@ -38,6 +38,8 @@ uint8_t test_index;
 uint8_t test_var;
 uint32_t test_tab[test_MAX];
 
+extern uint8_t uart_timeout_on;
+
 extern UART_HandleTypeDef hlpuart1;
 extern osThreadId_t defaultTaskHandle;
 extern osThreadId_t Appli_TaskHandle;
@@ -144,7 +146,7 @@ void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
 
 #ifdef mode_sleep
-	if (*ulExpectedIdleTime >= 20)
+	if (*ulExpectedIdleTime >= 100)
     {
 
     	HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
@@ -157,7 +159,7 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
 
 #ifdef mode_sleep
-	SystemClock_Config_FS();
+	SystemClock_Config();
 	  (void) ulExpectedIdleTime;
 
 	    // Remettre à jour la variable SystemCoreClock
@@ -165,6 +167,9 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 
 	    // Réinitialiser le SysTick en fonction de la nouvelle HCLK
 	    HAL_InitTick(TICK_INT_PRIORITY);
+
+		if (uart_timeout_on)
+			verif_timout_uart_rx();
 #endif
      //*ulExpectedIdleTime = 0;
 }
@@ -217,14 +222,21 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
     {
 		counter++;
 
-		event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
+		/*event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
 		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-			code_erreur = ISR_callback; 	err_donnee1 = 1; }
+			code_erreur = ISR_callback; 	err_donnee1 = 1; }*/
 
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
 			event_t evt = { EVENT_TIMER_20min, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 				code_erreur = ISR_callback; 	err_donnee1 = 5; }
+		}
+		else
+		{
+			event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
+			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+				code_erreur = ISR_callback; 	err_donnee1 = 1; }
+
 		}
 
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
@@ -934,6 +946,15 @@ void display_current_time(void)
     LOG_INFO("HL: %02d/%02d/20%02d %02d:%02d:%02d", sDate.Date, sDate.Month, sDate.Year, sTime.Hours, sTime.Minutes, sTime.Seconds);
     LOG_INFO("Timestamp: %08X", get_rtc_timestamp());
     //LOG_INFO("Timestamp: %lu", get_rtc_timestamp());
+}
+
+uint32_t get_rtc_seconds_since_midnight(void)
+{
+    RTC_TimeTypeDef sTime;
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+    // Convertir en secondes depuis minuit
+    return sTime.Hours * 3600 + sTime.Minutes * 60 + sTime.Seconds;
 }
 
 HAL_StatusTypeDef set_rtc_time_from_string(const char* time_str)

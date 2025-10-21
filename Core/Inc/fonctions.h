@@ -111,6 +111,7 @@ uint8_t watchdog_is_task_alive(watchdog_task_id_t task_id);
 void watchdog_print_status(void);
 void watchdog_test_task_block(watchdog_task_id_t task_id, uint32_t duration_ms);
 void watchdog_set_context(watchdog_task_id_t task_id, watchdog_context_t context);
+uint32_t get_rtc_seconds_since_midnight(void);
 
 // Fonctions de diagnostic du reset
 void display_reset_cause(void);
