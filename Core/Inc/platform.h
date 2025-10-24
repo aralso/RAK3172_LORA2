@@ -29,6 +29,7 @@ extern "C" {
 /* Exported constants --------------------------------------------------------*/
 
 /* USER CODE BEGIN EC */
+#define USE_BSP_DRIVER
 
 /* USER CODE END EC */
 

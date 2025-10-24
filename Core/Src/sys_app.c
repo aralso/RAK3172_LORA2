@@ -67,6 +67,9 @@ void SystemApp_Init(void)
 {
   /* USER CODE BEGIN SystemApp_Init_1 */
 
+	  /* Ensure that MSI is wake-up system clock */
+	  __HAL_RCC_WAKEUPSTOP_CLK_CONFIG(RCC_STOP_WAKEUPCLOCK_MSI);
+
   /* USER CODE END SystemApp_Init_1 */
 
 }

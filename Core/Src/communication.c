@@ -1171,6 +1171,44 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 
               if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // SLRe  Reset cause et diagnostic
             	  display_reset_cause();
+
+              if ( (message_in[4] =='R') && (message_in[5] =='1') && (longueur_m==6))  // SLR1  Etat radio
+              {
+          		LOG_INFO("SUBGHZ State: %d", hsubghz.State);
+          		LOG_INFO("SUBGHZ DeepSleep: %d", hsubghz.DeepSleep);
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='2') && (longueur_m==6))  // SLR2  Envoie message
+              {
+            	  //sendRadio();
+            	  SendFrameModif(1);
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='3') && (longueur_m==6))  // SLR3 test radio
+              {
+                  test_radio_progressive();
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='4') && (longueur_m==6))  // SLR4 test radio sleep
+              {
+                  diagnose_radio_deep_sleep();
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='5') && (longueur_m==6))  // SLR4 test radio sleep
+            	  check_radio_power_supply();
+              if ( (message_in[4] =='R') && (message_in[5] =='6') && (longueur_m==6))  // SLR4 test radio sleep
+            	  test_radio_write_register();
+              if ( (message_in[4] =='R') && (message_in[5] =='7') && (longueur_m==6))  // SLR4 test radio sleep
+            	  test_radio_configuration_detailed();
+              if ( (message_in[4] =='R') && (message_in[5] =='8') && (longueur_m==6))  // SLR4 test radio sleep
+            	  test_radio_wakeup_methods();
+              if ( (message_in[4] =='R') && (message_in[5] =='9') && (longueur_m==6))  // SLR4 test radio sleep
+            	  test_radio_direct_transmission();
+
+              if ( (message_in[4] =='R') && (message_in[5] =='A') && (longueur_m==6))  // SLR4 test radio sleep
+            	  check_radio_hardware_configuration();
+              if ( (message_in[4] =='R') && (message_in[5] =='B') && (longueur_m==6))  // SLR4 test radio sleep
+            	  reset_radio_completely();
+              if ( (message_in[4] =='R') && (message_in[5] =='C') && (longueur_m==6))  // SLR4 test radio sleep
+            	  try_radio_wakeup_all_commands();
+
+
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Test eeprom/log_flash
           {

@@ -19,7 +19,7 @@
 #include "queue.h"
 
 #define WATCHDOG
-#define mode_sleep
+//#define mode_sleep
 
 // Structure pour les événements
 typedef struct {

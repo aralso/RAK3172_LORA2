@@ -26,5 +26,8 @@
 void subghz_enter_sleep_mode(void);
 void subghz_wake_up(void);
 void configure_radio_parameters(void);
+void sendRadio();
+void test_radio_progressive(void);
+uint8_t SendFrameModif( uint8_t channel );
 
 #endif /* INC_LORA_H_ */

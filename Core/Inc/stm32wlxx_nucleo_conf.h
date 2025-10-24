@@ -1,12 +1,13 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    stm32wlxx_it.h
-  * @brief   This file contains the headers of the interrupt handlers.
+  * @file    stm32wlxx_nucleo_conf.h
+  * @author  MCD Application Team
+  * @brief   STM32WLxx_Nucleo board configuration file.
   ******************************************************************************
-  * @attention
+   * @attention
   *
-  * Copyright (c) 2025 STMicroelectronics.
+  * Copyright (c) 2021 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -18,14 +19,16 @@
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __STM32WLxx_IT_H
-#define __STM32WLxx_IT_H
+#ifndef STM32WLXX_NUCLEO_CONF_H
+#define STM32WLXX_NUCLEO_CONF_H
 
 #ifdef __cplusplus
-extern "C" {
+ extern "C" {
 #endif
 
-/* Private includes ----------------------------------------------------------*/
+/* Includes ------------------------------------------------------------------*/
+#include "stm32wlxx_hal.h"
+
 /* USER CODE BEGIN Includes */
 
 /* USER CODE END Includes */
@@ -36,9 +39,54 @@ extern "C" {
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
+/** @addtogroup BSP
+  * @{
+  */
+
+/** @addtogroup STM32WLXX_NUCLEO
+  * @{
+  */
+
+/** @defgroup STM32WLXX_NUCLEO_CONFIG CONFIG
+  * @{
+  */
+
+/** @defgroup STM32WLXX_NUCLEO_CONFIG_Exported_Constants Exported Constants
+  * @{
+  */
+/* COM usage define */
+#define USE_BSP_COM_FEATURE                 0U
+
+/* COM log define */
+#define USE_COM_LOG                         0U
+
+/* IRQ priorities */
+#define BSP_BUTTON_USER_IT_PRIORITY         14U
+
+/**
+  * @}
+  */
+
+/**
+  * @}
+  */
+
+/**
+  * @}
+  */
+
+/**
+  * @}
+  */
+
 /* USER CODE BEGIN EC */
 
 /* USER CODE END EC */
+
+/* External variables --------------------------------------------------------*/
+/* USER CODE BEGIN EV */
+
+/* USER CODE END EV */
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
@@ -46,18 +94,6 @@ extern "C" {
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
-void NMI_Handler(void);
-void HardFault_Handler(void);
-void MemManage_Handler(void);
-void BusFault_Handler(void);
-void UsageFault_Handler(void);
-void DebugMon_Handler(void);
-void ADC_IRQHandler(void);
-void TIM16_IRQHandler(void);
-void LPUART1_IRQHandler(void);
-void LPTIM1_IRQHandler(void);
-void EXTI15_10_IRQHandler(void);
-void SUBGHZ_Radio_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */
@@ -66,4 +102,4 @@ void SUBGHZ_Radio_IRQHandler(void);
 }
 #endif
 
-#endif /* __STM32WLxx_IT_H */
+#endif /* STM32WLXX_NUCLEO_CONF_H */

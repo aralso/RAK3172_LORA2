@@ -7,7 +7,7 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2025 STMicroelectronics.
+  * Copyright (c) 2022 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -40,20 +40,6 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 extern SUBGHZ_HandleTypeDef hsubghz;
 /* USER CODE BEGIN ET */
-
-  /* @brief Set RX pin to high or low level
-  */
-//#define DBG_GPIO_RADIO_RX(set_rst) PROBE_GPIO_##set_rst##_LINE(PROBE_LINE1_PORT, PROBE_LINE1_PIN);
-
-/**
-  * @brief Set TX pin to high or low level
-  */
-//#define DBG_GPIO_RADIO_TX(set_rst) PROBE_GPIO_##set_rst##_LINE(PROBE_LINE2_PORT, PROBE_LINE2_PIN);
-
-/**
-  * @brief Max payload buffer size
-  */
-#define RADIO_RX_BUF_SIZE          255
 
 /* USER CODE END ET */
 

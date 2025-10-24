@@ -10,6 +10,7 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
+ v1.8 10/2025 : envoi subghz ok
  v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
  v1.5 10/2025 : eeprom, log_flash, rtc, messages binaires, attente dans en_queue
@@ -22,6 +23,7 @@ TODO BUG : timer apres uart_rx, HLH
 Conso en mode veille :
 Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 
+Conso en MSI_range8 et HSI : 1,33mA
 */
 
 #include <appli.h>
@@ -182,6 +184,7 @@ void init4(void)
 {
     init_functions4();  // watchdog, Log, eeprom
 
+    MX_SubGHz_Phy_Init();
 
     //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitB", 5, 3000);
     //HAL_Delay(500);
@@ -426,8 +429,7 @@ void LORA_RXTsk(void *argument)
   //LOG_INFO("LoRa RX Task started with watchdog protection");
 
   /* Infinite loop */
-	uint8_t rx_buffer[64];
-	uint8_t radio_status;
+//	uint8_t rx_buffer[64];
 
     osDelay(100);
 
@@ -437,7 +439,7 @@ void LORA_RXTsk(void *argument)
 		watchdog_task_heartbeat(WATCHDOG_TASK_LORA_RX);
 
 		// Vérifier l'état du radio
-		if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
+		/*if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
 
 			// Vérifier si un message est disponible
 			if (radio_status & 0x02) { // Bit RX_DONE
@@ -458,7 +460,7 @@ void LORA_RXTsk(void *argument)
 			}
 		} else {
 			LOG_WARNING("Failed to read radio status");
-		}
+		}*/
 
 		osDelay(1000);
 	}
@@ -481,9 +483,9 @@ void LORA_TXTsk(void *argument)
 
   /* Infinite loop */
 
-  uint32_t message_count = 0;
-  uint8_t tx_buffer[64];
-  uint8_t radio_status;
+  //uint32_t message_count = 0;
+  //uint8_t tx_buffer[64];
+  //uint8_t radio_status;
 
   osDelay(100);
 
@@ -497,20 +499,20 @@ void LORA_TXTsk(void *argument)
 	  //LOG_INFO("a");
 
 	  // Créer un message avec timestamp
-	  uint32_t timestamp = HAL_GetTick() / 1000; // secondes
-	  sprintf((char *)tx_buffer, "LoRa message #%lu at %lu s", message_count++, timestamp);
+	  //uint32_t timestamp = HAL_GetTick() / 1000; // secondes
+	  //sprintf((char *)tx_buffer, "LoRa message #%lu at %lu s", message_count++, timestamp);
 
        //LOG_DEBUG("Sending LoRa message: %s", tx_buffer);
 
        // Vérifier que le radio est libre
-       if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
+       /*if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
            if (!(radio_status & 0x01)) { // Pas en transmission
 
                // Écrire le message dans le buffer radio
                if (HAL_SUBGHZ_WriteBuffer(&hsubghz, 0x00, tx_buffer, strlen((char*)tx_buffer)) == HAL_OK) {
 
                    // Démarrer la transmission
-                   /*uint8_t tx_cmd = 0x83; // Commande TX
+                   uint8_t tx_cmd = 0x83; // Commande TX
                    if (HAL_SUBGHZ_ExecSetCmd(&hsubghz, tx_cmd, NULL, 0) == HAL_OK)
                    {
                        LOG_INFO("LoRa transmission started");
@@ -530,7 +532,7 @@ void LORA_TXTsk(void *argument)
                        }
                    } else {
                        LOG_ERROR("Failed to start LoRa transmission");
-                   }*/
+                   }
                } else {
                    LOG_ERROR("Failed to write LoRa buffer");
                }
@@ -539,7 +541,7 @@ void LORA_TXTsk(void *argument)
            }
        } else {
            LOG_ERROR("Failed to read radio status");
-       }
+       }*/
   }
   /* USER CODE END LORA_TXTsk */
 }
