@@ -42,6 +42,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /*!
+ *
  * Radio hardware and global parameters
  */
 typedef struct SubgRf_s
@@ -74,6 +75,7 @@ typedef struct SubgRf_s
 
 #endif /* RADIO_LR_FHSS_IS_ON == 1 */
 } SubgRf_t;
+
 
 /* Private macro -------------------------------------------------------------*/
 #define RADIO_BIT_MASK(__n)  (~(1<<__n))

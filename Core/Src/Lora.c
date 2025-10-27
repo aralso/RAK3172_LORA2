@@ -22,6 +22,13 @@
 #define DR_7	7
 
 double floor (double);
+struct radio_TxParam_s radio_TxParam;
+
+static uint8_t lora_buff[MESS_BUFFER_SIZE];
+static uint16_t lora_head = 0;
+static uint16_t lora_tail = 0;
+
+static osMutexId_t lora_bufferMutex;
 
 uint32_t RegionCommonGetBandwidth( uint32_t drIndex, const uint32_t* bandwidths )
 {
@@ -45,6 +52,24 @@ int8_t RegionCommonComputeTxPower( int8_t txPowerIndex, float maxEirp, float ant
 
     return phyTxPower;
 }
+
+static TimerTime_t GetTimeOnAir( int8_t datarate, uint16_t pktLen )
+{
+    int8_t phyDr = DataratesEU868[datarate];
+    uint32_t bandwidth = RegionCommonGetBandwidth( datarate, BandwidthsEU868 );
+    TimerTime_t timeOnAir = 0;
+
+    if( datarate == DR_7 )
+    { // High Speed FSK channel
+        timeOnAir = Radio.TimeOnAir( MODEM_FSK, bandwidth, phyDr * 1000, 0, 5, false, pktLen, true );
+    }
+    else
+    {
+        timeOnAir = Radio.TimeOnAir( MODEM_LORA, bandwidth, phyDr, 1, 8, false, pktLen, true );
+    }
+    return timeOnAir;
+}
+
 
 bool RegionEU868TxConfigM( TxConfigParams_t* txConfig, int8_t* txPower, TimerTime_t* txTimeOnAir )
 {
@@ -73,7 +98,7 @@ bool RegionEU868TxConfigM( TxConfigParams_t* txConfig, int8_t* txPower, TimerTim
     //RegionCommonTxConfigPrint(txConfig->Channel, txConfig->Datarate);
 
     // Update time-on-air
-    //*txTimeOnAir = GetTimeOnAir( txConfig->Datarate, txConfig->PktLen );
+    *txTimeOnAir = GetTimeOnAir( txConfig->Datarate, txConfig->PktLen );
 
     // Setup maximum payload length of the radio driver
     Radio.SetMaxPayloadLength( modem, txConfig->PktLen );
@@ -83,6 +108,46 @@ bool RegionEU868TxConfigM( TxConfigParams_t* txConfig, int8_t* txPower, TimerTim
 
 }
 
+void SetRadioTxParam (uint8_t param, uint8_t val)
+{
+
+	if (param==1)  // power
+		radio_TxParam.power = val;
+	if (param==2)  // bandwith
+		radio_TxParam.bandwidth = val;
+	if (param==3)  // Spread factor
+		radio_TxParam.SF = val;
+	if (param==4)  // coderate
+		radio_TxParam.coderate = val;
+	if (param==5)  // preamble length
+		radio_TxParam.preambleLen = val;
+	if (param==6)  // timeout
+		radio_TxParam.timeout = val;
+	if (param==7)  // DR    0 à 7
+	{
+		radio_TxParam.DR = val;
+		radio_TxParam.SF = DataratesEU868[val];
+		radio_TxParam.bandwidth  = RegionCommonGetBandwidth( val, BandwidthsEU868 );
+	}
+	if (param==8)  // freq
+	{
+		radio_TxParam.freq = (val+860)*1000000;
+		Radio.SetChannel (radio_TxParam.freq + radio_TxParam.channel*100000);
+	}
+	if (param==9)  // channel
+	{
+		radio_TxParam.channel = val;
+		Radio.SetChannel (radio_TxParam.freq + radio_TxParam.channel*100000);
+	}
+	if (param < 8)
+	{
+		Radio.SetTxConfig(radio_TxParam.modem, radio_TxParam.power, radio_TxParam.fdev, radio_TxParam.bandwidth, \
+				radio_TxParam.SF, radio_TxParam.coderate, radio_TxParam.preambleLen, radio_TxParam.fixLen,\
+				radio_TxParam.crcOn, radio_TxParam.freqHopOn, radio_TxParam.hopPeriod, radio_TxParam.iqInverted, \
+				radio_TxParam.timeout);
+	}
+
+}
 
 uint8_t SendFrameModif( uint8_t channel )
 {
@@ -160,23 +225,44 @@ void configure_radio_parameters(void)
         MODEM_LORA,           // Modem LoRa
         0,                   // Power: 14 dBm
         0,                    // Frequency deviation (N/A pour LoRa)
-        0,                    // Bandwidth (N/A pour LoRa)
-        3,                    // Datarate: 128 chips
-        1,                    // Coderate: 4/5
+        0,                    // Bandwidth 0:125k 1:250k 2:500k
+        12,                    // SF Datarate: 6=64chips, 7=128 chips 12=4096chips
+        1,                    // Coderate: 1:4/5
         8,                    // Preamble length
-        false,                // Variable length
-        true,                 // CRC enabled
+        false,                // Variable length : 0:variable
+        true,                 // CRC enabled : 0;off 1:CRC
         false,                // Frequency hopping 0:OFF
         0,                    // Hop period
         false,                // IQ not inverted
         3000                  // Timeout: 3 secondes
     );
+	radio_TxParam.modem = MODEM_LORA;   // 0:FSK  1:LORA
+	radio_TxParam.power = 0;			// en dBm
+	radio_TxParam.fdev = 0;				// 25000 pour FSK
+	radio_TxParam.bandwidth = 0;		// Bandwidth 0:125k 1:250k 2:500k
+	radio_TxParam.SF = 12;			    // SFDatarate: 6=64chips, 7=128 chips 12=4096chips
+	radio_TxParam.coderate = 1;			// Coderate 1:4/5  2:4/6
+	radio_TxParam.preambleLen = 8;		// En octets (rajouter 4)
+	radio_TxParam.fixLen = 0;			// Fixed length : 0:variable
+	radio_TxParam.crcOn = true;			// CRC enabled : 0;off 1:CRC
+	radio_TxParam.freqHopOn = false;	// Frequency hopping 0:OFF
+	radio_TxParam.hopPeriod = 0;
+	radio_TxParam.iqInverted = 0;
+	radio_TxParam.timeout = 4000;
+	radio_TxParam.freq = 868000000;
+	radio_TxParam.channel = 1;			// channel de 100kHz
+	radio_TxParam.DR = 6	;			// DR 0(SF12) à 7(FSK)
 
+	// DR0:SF12 BW125   DR1:SF11 BW125   DR5:SF7 BW125   DR6:SF7 BW250    DR7:FSK
     Radio.Sleep();
 
-    LOG_INFO("Radio LoRa configuree: 868.1 MHz, SF7, 14 dBm");
+    LOG_INFO("Radio LoRa configuree: 868 MHz, SF7, 0 dBm");
 }
 
+void PrintRadioTxParam(void)
+{
+	//LOG_INFO ()
+}
 void sendRadio()
 {
     uint8_t tx_buffer[64];
@@ -191,72 +277,148 @@ void sendRadio()
     // Le callback OnTxDone() sera appelé automatiquement
 }
 
-
-void sendRadio_HAL()
+// Ajout d’un message LORA dans la queue
+uint8_t mess_LORA_enqueue(out_message_t* mess)
 {
-	uint8_t radio_status;
-    uint8_t tx_buffer[64];
-    strcpy((char*)tx_buffer, "MESS RADIO");  // 25ms en SF7
 
-	// Vérifier que le radio est libre
-	if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK)
-	{
-		if (!(radio_status & 0x01))
-		{ // Pas en transmission
+    if ((mess->length < 5) || (mess->length > MESS_LG_MAX))
+    {
+    	return 1;
+    }
 
-			// Écrire le message dans le buffer radio
-			if (HAL_SUBGHZ_WriteBuffer(&hsubghz, 0x00, tx_buffer, strlen((char*)tx_buffer)) == HAL_OK)
-			{
-				// Démarrer la transmission
-				uint8_t tx_cmd = 0x83; // Commande TX
-				if (HAL_SUBGHZ_ExecSetCmd(&hsubghz, tx_cmd, NULL, 0) == HAL_OK)
-				{
-					LOG_INFO("Commande TX envoyée, attente...");
+    uint16_t total_size = mess->length+4;
 
-					// 4. Attendre avec polling
-					uint32_t start_wait = HAL_GetTick();
-					bool transmission_done = false;
+    if (lora_head >= MESS_BUFFER_SIZE) {
+            lora_head = 0; // Reset si corruption
+            lora_tail = 0;
+    }
+    uint32_t start_time = HAL_GetTick();
 
-					while ((HAL_GetTick() - start_wait) < 5000) // Max 5 secondes
-					{
-						if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK)
-						{
-							LOG_INFO("Statut pendant attente: 0x%02X", radio_status);
+    uint16_t free_space;
 
-							if (radio_status & 0x08) // TX_DONE
-							{
-								LOG_INFO("✅ Transmission terminée avec succès !");
-								transmission_done = true;
-								break;
-							}
-							else if (radio_status & 0x10) // TX_TIMEOUT
-							{
-								LOG_ERROR("❌ Timeout transmission");
-								break;
-							}
-						}
+    if (lora_head >= lora_tail)
+        free_space = MESS_BUFFER_SIZE - (lora_head - lora_tail) - 1;
+    else
+        free_space = (lora_tail - lora_head) - 1;
 
-						osDelay(50); // Attendre 50ms
-					}
+    /*HAL_Delay(10);
+    char uart_msg[50];
+    snprintf(uart_msg, sizeof(uart_msg), "Uart send1: %i \r\n", free_space);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
+    HAL_Delay(10);*/
+    //UART_SEND("Send1\n\r");
 
-					if (!transmission_done) {
-						LOG_ERROR("❌ Transmission non terminée après 5s");
-						//diagnose_radio_status(radio_status);
-					}
-				}
-			    else {
-					LOG_ERROR("Failed to start LoRa transmission");
-				}
-			} else {
-				LOG_ERROR("Failed to write LoRa buffer");
-			}
-		} else {
-			LOG_WARNING("LoRa radio busy");
+
+	 while (free_space < (uint16_t)(total_size + 10))
+	 {
+		    /*HAL_Delay(10);
+		    char uart_msg[50];
+		    snprintf(uart_msg, sizeof(uart_msg), "Uart Att: %i \r\n", free_space);
+		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
+		    HAL_Delay(10);*/
+	        //UART_SEND("SendAtt\n\r");
+        osDelay(100);  // Attendre 100ms
+		if ((HAL_GetTick() - start_time) > 2000)
+		{
+			//LOG_ERROR("Queue full timeout after %lu ms", 2000);
+		    osMutexRelease(lora_bufferMutex);
+		    log_write('E', log_w_err_uart_bloque, 0x02, 0x03, "uartRxBl");
+		    return 2;  // Timeout
 		}
-	} else {
-		LOG_ERROR("Failed to read radio status");
-	}
+	    if (lora_head >= lora_tail)
+	        free_space = MESS_BUFFER_SIZE - (lora_head - lora_tail) - 1;
+	    else
+	        free_space = (lora_tail - lora_head) - 1;
+	 }
+    //UART_SEND("Send2\n\r");
+
+	osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
+	if (status != osOK) return 3;
+
+    uint16_t head_prov = lora_head;
+
+    uint8_t* mess_ptr = (uint8_t*)mess;
+        for (uint16_t i = 0; i < total_size; i++) {
+            lora_buff[head_prov] = mess_ptr[i];
+            head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
+        }
+
+    lora_head = head_prov;
+
+	//osDelay(100);
+	//LOG_INFO("enqueue:head:%d tail:%d", head, tail);
+    //osDelay(100);
+    osMutexRelease(lora_bufferMutex);
+
+	event_t evt = { EVENT_LORA_TX, 0, 0 };
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+		{ code_erreur = ISR_callback; 	err_donnee1 = 7; }
+
+    return 0;
 }
+
+// Extraction d’un message LORA de la queue
+// retour : 0:message dispo pour l'envoi, 1:fifo vide, sinon:erreur
+uint8_t mess_LORA_dequeue(out_message_t* mess)
+{
+	osStatus_t status = osMutexAcquire(lora_bufferMutex, 10000);
+	if (status != osOK) return 4;
+
+	uint16_t tail_prov = lora_tail;
+
+    if (lora_head == lora_tail) {
+        osMutexRelease(lora_bufferMutex);
+        return 1; // FIFO vide
+    }
+
+
+    uint16_t size = lora_buff[lora_tail];
+
+
+	//osDelay(300);
+	//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
+    //osDelay(300);
+
+    // Vérif longueur valide
+	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
+	{
+		lora_head=0;
+		lora_tail=0;
+		osMutexRelease(lora_bufferMutex);
+		return 2; // corruption détectée
+	}
+
+	// Vérif que les données tiennent dans la FIFO actuelle
+	uint16_t available = (lora_head >= tail_prov) ?
+						 (lora_head - tail_prov) :
+						 (MESS_BUFFER_SIZE - (tail_prov - lora_head));
+
+	if (available < size) {
+		lora_head=0;
+		lora_tail=0;
+		osMutexRelease(lora_bufferMutex);
+		return 3; // corruption : message incomplet
+	}
+
+    uint8_t* mess_ptr = (uint8_t*)mess;
+        for (uint16_t i = 0; i < size+4; i++) {
+            mess_ptr[i] = lora_buff[tail_prov];
+            tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+        }
+    lora_tail = tail_prov;
+	//osDelay(300);
+	//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
+    //osDelay(300);
+
+    // Analyser s'il y a un autre message à envoyer dans la pile
+    // TODO  à faire
+    // Si oui, mettre le bit 0 de mess.param à 0, sinon mettre 1
+
+    osMutexRelease(lora_bufferMutex);
+    return 0;
+}
+
+
 
 
 // Fonction pour mettre le radio en veille
@@ -586,9 +748,8 @@ void check_radio_hardware_configuration(void)
         }
     }
 }
-void reset_radio_completely(void)
-{
-}
+
+
 void try_radio_wakeup_all_commands(void)
 {
     LOG_INFO("=== ESSAI TOUTES LES COMMANDES DE RÉVEIL ===");

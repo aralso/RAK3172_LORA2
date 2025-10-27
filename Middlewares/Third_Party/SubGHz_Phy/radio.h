@@ -49,6 +49,29 @@ extern "C"
 
 /* Private typedef -----------------------------------------------------------*/
 
+   /*!
+    *
+    */
+typedef struct radio_TxParam_s
+{
+	uint32_t freq;
+	uint8_t channel;
+	uint8_t DR;
+	RadioModems_t modem;
+	int8_t power;
+	uint32_t fdev;
+	uint32_t bandwidth;
+	uint32_t SF;
+	uint8_t coderate;
+	uint16_t preambleLen;
+	bool fixLen;
+	bool crcOn;
+	bool freqHopOn;
+	uint8_t hopPeriod;
+	bool iqInverted;
+	uint32_t timeout;
+} radio_TxParam_t;
+
 /*!
  * Radio driver internal state machine states definition
  */

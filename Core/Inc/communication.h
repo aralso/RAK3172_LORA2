@@ -44,7 +44,7 @@
 
 extern uint8_t code_erreur, comptage_erreur;
 extern uint8_t err_donnee1, err_donnee2;
-
+extern uint8_t param_def;
 
 // Code erreur
 
@@ -85,15 +85,24 @@ typedef struct
 } UartStruct;
 
 typedef struct {
-    uint8_t data[MESS_LG_MAX];        // Données du message
     uint8_t length;          // Longueur du message
     uint8_t type;            // Type : 0=ASCII, 1=Binaire
     uint8_t source;          // Source (UART1, UART2, etc.)
+    uint8_t data[MESS_LG_MAX];        // Données du message
 } in_message_t;
+
+typedef struct {
+    uint8_t length;          // Longueur du message (champs data)
+    uint8_t type;            // Type : 0=ASCII, 1=Binaire
+    uint8_t dest;          // dest
+    uint8_t param; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)   bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
+    uint8_t data[MESS_LG_MAX];        // Données du message
+} out_message_t;
+
 
 extern UartStruct UartSt[NB_UART];
 void reception_message_Uart2(in_message_t *msg);
-uint8_t envoie_routage( uint8_t *mess, uint8_t len);
+uint8_t envoie_routage(out_message_t* message);
 void verif_timout_uart_rx(void);
 
 
@@ -123,8 +132,8 @@ void set_log_level(uint8_t level);
 
 // Fonction pour obtenir le niveau actuel
 uint8_t get_log_level(void);
-uint8_t envoie_mess_ASC(const char* format, ...);
-uint8_t envoie_mess_bin(const uint8_t *buf);
+uint8_t envoie_mess_ASC(uint8_t param, const char* format, ...);
+uint8_t envoie_mess_bin(out_message_t* mess);
 uint8_t deci (uint8_t val);
 void envoi_code_erreur(void);
 

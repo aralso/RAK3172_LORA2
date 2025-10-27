@@ -11,7 +11,7 @@ static uint32_t current_log_page = 0;
 static uint32_t current_write_index = 0;
 static log_page_header_t log_page_headers[LOG_PAGE_COUNT];
 static const uint32_t LOG_MAGIC_NUMBER = 0x12345678;
-static uint8_t bufferTx_log[MESS_LG_MAX];
+static out_message_t bufferTx_log;
 uint8_t index_bufferTx;
 static log_header_flash_t header_f;
 
@@ -291,24 +291,25 @@ uint16_t log_read(uint16_t debut_entry, uint16_t max_entries, uint8_t dest, uint
                             else {
                                 strcpy(time_str, "Invalid");  // Valeur par défaut
                             }
-                                envoie_mess_ASC("%cLO%c:%i %i %i %s %s\r\n", dest, entry.code, entry.c1, entry.c2, entry.c3, time_str, formatted_message);
+                                envoie_mess_ASC(param_def, "%cLO%c:%i %i %i %s %s\r\n", dest, entry.code, entry.c1, entry.c2, entry.c3, time_str, formatted_message);
                         }
                         else {
                         	if (!index_bufferTx)
                         	{
-                        		bufferTx_log[0]=dest;
-                        		bufferTx_log[2]='L';
-                        		bufferTx_log[3]='O';
+                        		bufferTx_log.data[0]=dest;
+                        		bufferTx_log.data[2]='L';
+                        		bufferTx_log.data[3]='O';
                         	}
                         	//memcpy((char*)bufferTx_log, (char*)entry.message, 16);
-                        	memcpy((char*)bufferTx_log+5+index_bufferTx*16, (char*)&entry.timestamp, 16);
+                        	memcpy((char*)bufferTx_log.data+5+index_bufferTx*16, (char*)&entry.timestamp, 16);
                         	index_bufferTx++;
                         	// envoi message
                         	if (index_bufferTx >= (MESS_LG_MAX-6)/16)
                         	{
-                        		bufferTx_log[1]= 2 + index_bufferTx*16;
-                        		bufferTx_log[4]= index_bufferTx;
-                        		envoie_mess_bin( bufferTx_log );
+                        		bufferTx_log.data[1]= 2 + index_bufferTx*16;
+                        		bufferTx_log.data[4]= index_bufferTx;
+                        		bufferTx_log.param = param_def;
+                        		envoie_mess_bin( &bufferTx_log );
                         		index_bufferTx = 0;
                         	}
                         }
@@ -324,9 +325,9 @@ uint16_t log_read(uint16_t debut_entry, uint16_t max_entries, uint8_t dest, uint
     // flush le buffer binaire
     if ((index_bufferTx) && (type))
     {
-		bufferTx_log[1]= 2 + index_bufferTx*16;
-		bufferTx_log[4]= index_bufferTx;
-		envoie_mess_bin( bufferTx_log );
+		bufferTx_log.data[1]= 2 + index_bufferTx*16;
+		bufferTx_log.data[4]= index_bufferTx;
+		envoie_mess_bin( &bufferTx_log );
 		index_bufferTx = 0;
     }
     

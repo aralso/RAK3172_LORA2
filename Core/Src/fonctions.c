@@ -246,6 +246,13 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 				code_erreur = ISR_callback; 	err_donnee1 = 6; }
 		}
+		#if CLASS == 'B'
+		if (counter % 3 == 0) {  // Toutes les 30 secondes : Ecoute balise du concentrateur
+			event_t evt = { EVENT_LORA_REVEIL_BALISE, 0, 0 };
+			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+				code_erreur = ISR_callback; 	err_donnee1 = 6; }
+		}
+		#endif
 	 }
 }
 
@@ -446,7 +453,7 @@ void envoi_code_erreur (void)        // envoie l'erreur a dest_erreur_reset
            if (err_donnee1) i3=10;
            if (err_donnee2) i3=11;
            message[i3] = 0;
-           envoie_mess_ASC((const char*)message);
+           envoie_mess_ASC(param_def, (const char*)message);
           #endif
           }
     }

@@ -31,8 +31,10 @@ typedef struct {
 
 typedef enum  {
     EVENT_BUTTON = 0,
-    EVENT_LORA_RX,
     EVENT_LORA_TX,
+	EVENT_LORA_TX_DONE,
+	EVENT_LORA_RX,
+	EVENT_LORA_REVEIL_BALISE,
     EVENT_UART_RX,
     EVENT_ERROR,
     EVENT_WAKE_UP,

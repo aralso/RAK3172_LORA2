@@ -10,6 +10,7 @@
 #include <fonctions.h>
 #include <eeprom_emul.h>
 #include <log_flash.h>
+#include "lora.h"
 #include "cmsis_os.h"
 #include "timers.h"
 #include "queue.h"
@@ -22,8 +23,11 @@
 #define nb_ligne_routage 2  //  0->Loop  1->Uart   Add+1->Uart
 uint8_t table_routage[nb_ligne_routage][6] = {
     {'1', '1', 3, 0, 0, 0},
-    {'2', 'z', 7, 'Q', 0, 0}
+    {'2', 'z', 7, 'H', 0, 0}
 };
+
+uint8_t param_def = 0; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
+              // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
 
 /* gestion des erreurs
 Code_erreur => utile dans les ISR, peut masquer les premieres erreurs simultanées, gestion des répétitions
@@ -42,10 +46,9 @@ uint8_t uart_timeout_on;
 
 uint16_t cpt_rx_uart;
 
-static uint8_t log_buffer[MESS_LG_MAX_LOG];
+static out_message_t log_buffer;
 static uint16_t len_ASC;
-static uint8_t mess_ASC[MESS_LG_MAX]; // Variable locale pour travailler
-static char formatted_buffer[MESS_LG_MAX]; // Buffer pour le formatage
+static out_message_t form_buf; // Buffer pour le formatage de message ASCII
 static SemaphoreHandle_t log_mutex = NULL;
 
 extern SUBGHZ_HandleTypeDef hsubghz;
@@ -67,7 +70,7 @@ uint8_t uart_rx_char;
 
 UartStruct UartSt[NB_UART];
 
-uint8_t message[MESS_LG_MAX];
+out_message_t message;
 
 extern QueueHandle_t Event_QueueHandle;
 
@@ -106,8 +109,8 @@ static uint16_t tail = 0;
 static osMutexId_t bufferMutex;
 
 
-uint8_t mess_enqueue(const uint8_t *data, uint8_t len);
-uint8_t mess_dequeue(uint8_t *data, uint8_t *len);
+uint8_t mess_enqueue(out_message_t* mess);
+uint8_t mess_dequeue(out_message_t* mess);
 
 
 /*void TIMEOUT_RX_Callback(TimerHandle_t xTimer)
@@ -276,36 +279,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 
-/*void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    cpt_rx_uart++;
-    HAL_UART_Transmit(&hlpuart1, &uart_rx_char, 1, 3000);
-
-    if (huart->Instance == USART2) {
-        // Ajouter le caractère au buffer circulaire
-        uint16_t next_head = (uart_rx_head + 1) % UART_RX_BUFFER_SIZE;
-
-        if (next_head != uart_rx_tail) {  // Buffer pas plein
-            uart_rx_buffer[uart_rx_head] = uart_rx_char;  // Le caractère reçu
-            uart_rx_head = next_head;
-
-            // Envoyer vers la queue (depuis l'interruption)
-            uint8_t received_char = uart_rx_buffer[0];
-            xQueueSendFromISR(uart_rx_queue, &received_char, &xHigherPriorityTaskWoken);
-        } else {
-            //LOG_WARNING("UART RX buffer overflow");  // bof en interruption
-        	code_erreur = ISR_uart_full;
-        }
-
-        // Relancer la réception pour le prochain caractère
-        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
-    }
-
-    // Forcer le changement de contexte si nécessaire
-    //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}*/
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
@@ -535,7 +508,7 @@ void raz_Uart(uint8_t num_uart)  // raz car en reception (suite timeout)
 
 
 // PRS0 -> PURS0 (lg=5)
-uint8_t envoie_mess_ASC(const char* format, ...)
+uint8_t envoie_mess_ASC(uint8_t param, const char* format, ...)
 {
 
 	if (format == NULL) {
@@ -545,7 +518,7 @@ uint8_t envoie_mess_ASC(const char* format, ...)
 	// Formatage des arguments variables
 	va_list args;
 	va_start(args, format);
-	len_ASC = vsnprintf(formatted_buffer, sizeof(formatted_buffer) - 1, format, args);
+	len_ASC = vsnprintf((char*)form_buf.data, sizeof(form_buf.data) - 1, format, args);
 	va_end(args);
 
 	// Vérifier si le formatage a réussi
@@ -556,18 +529,23 @@ uint8_t envoie_mess_ASC(const char* format, ...)
 
 	// Vérifier si len<3 ou la longueur dépasse la taille maximale
 	if ((len_ASC < 3) || ( (len_ASC+3) >= MESS_LG_MAX)) {
-		return 2; // Erreur : dépassement de buffer
+		return 2; // Erreur : dépassement de buffer ou trop court
 	}
 
-	// Copier buf dans mess
-	memcpy(mess_ASC+1, formatted_buffer, len_ASC + 1); // decalage & +1 pour inclure le '\0'
+	// décaler form_buf
+	memmove(&form_buf.data[1], &form_buf.data[0], len_ASC);
+	//memcpy(mess.data+1, form_buf, len_ASC + 1); // decalage & +1 pour inclure le '\0'
 	len_ASC += 2;
-	mess_ASC[0] = formatted_buffer[0];
-	mess_ASC[1] = My_Address;
+	form_buf.data[0] = form_buf.data[1];
+	form_buf.data[1] = My_Address;
 
 
 	// Envoyer le message
-	uint8_t res = envoie_routage(mess_ASC, len_ASC);
+	form_buf.length = len_ASC;
+	form_buf.dest = form_buf.data[0];
+	form_buf.type = 0;  // ascii
+	form_buf.param = param;
+	uint8_t res = envoie_routage(&form_buf);
 	//osDelay(100);
 	//LOG_INFO("enqueue:%i %s", len, mess);
     //osDelay(100);
@@ -576,15 +554,12 @@ uint8_t envoie_mess_ASC(const char* format, ...)
 
 // 11OK :  31 01 4F 4B => B1 55 01 4F 4B (lg=1, en fait:5)
 // P1RS => PU1RS (lg=5)
-uint8_t envoie_mess_bin(const uint8_t *buf)
+uint8_t envoie_mess_bin(out_message_t* mess)
 {
 	uint8_t len;
-	uint8_t mess[MESS_LG_MAX]; // Variable locale pour travailler
+	//uint8_t mess[MESS_LG_MAX]; // Variable locale pour travailler
 
-	if (buf == NULL) {
-		return 1; // Erreur : buffer nul
-	}
-	len = buf[1]+3;
+	len = mess->data[1]+3;
 
 	// Vérifier si len<3 ou la longueur dépasse la taille maximale
 	if ((len < 3) || ( (len+2) >= MESS_LG_MAX)) {
@@ -592,36 +567,40 @@ uint8_t envoie_mess_bin(const uint8_t *buf)
 	}
 
 	// Copier buf dans mess
-	memcpy(mess+1, buf, len); // decalage de 11TE
+	//memcpy(mess.data+1, buf, len); // decalage de 11TE
+	memmove(&mess->data[1], &mess->data[0], len);
 	len++; // pour emetteur  : 5
-	mess[0] = buf[0] | 0x80;
-	mess[1] = My_Address;
+	mess->data[0] = mess->data[0] | 0x80;
+	mess->data[1] = My_Address;
 
     /*for (int j = 0; j < len; j++) {
         LOG_DEBUG("0x%02X ", mess[j]);
     }*/
-
+	mess->length = len;
+	mess->type = 1;  // binaire
+	mess->dest = mess->data[0] & 0x7F;
+	mess->param = 0;
 
 	// Envoyer le message
-	uint8_t res = envoie_routage(mess, len);
+	uint8_t res = envoie_routage(mess);
 	return res;
 
 }
 
 // utilise la table de routage pour envoyer le message
-uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
+uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 {
 	uint8_t destinataire, i, j, retc;
 	retc=1;
 
-	destinataire = mess[0] & 0x7F;
+	destinataire = mess->dest;
 
 	if (((destinataire == My_Address) && (My_Address!='1')) || (destinataire == '0'))   // envoi sur soi-meme -loop
 	{
-	    if (len < MESS_LG_MAX -1)
+	    if (mess->length < MESS_LG_MAX -1)
 	    {
 	        //message_in[0] = '0' + message[0] & 0x80;  // emetteur=loop
-	        traitement_rx (mess, len);
+	        traitement_rx (mess->data, mess->length);
 	        retc=0;
 	    }
 	}
@@ -640,7 +619,7 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 	  if (j)
 	  {
 		   if (j==3)
-			   retc = mess_enqueue(mess, len);
+			   retc = mess_enqueue(mess);
 		   if (j==6)
 		   {
 			    //HAL_Delay(10);
@@ -649,7 +628,7 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 			    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
 			    //HAL_Delay(10);
 			    //UART_SEND("Send1\n\r");
-			  //retc = send_lora_message((const char*) mess, len, destinataire);
+			    retc = mess_LORA_enqueue(mess);
 		   }
   		   if (j==7) {
 			    //HAL_Delay(10);
@@ -667,14 +646,15 @@ uint8_t envoie_routage( uint8_t *mess, uint8_t len)  // envoi du message
 
 
 // Ajout d’un message Uart_TX
-uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
+uint8_t mess_enqueue(out_message_t* mess)
 {
 
-    if ((len < 5) || (len > MESS_LG_MAX))
+    if ((mess->length < 5) || (mess->length > MESS_LG_MAX))
     {
     	return 1;
     }
 
+    uint16_t total_size = mess->length+4;
 
     if (head >= MESS_BUFFER_SIZE) {
             head = 0; // Reset si corruption
@@ -689,26 +669,11 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
     else
         free_space = (tail - head) - 1;
 
-    /*HAL_Delay(10);
-    char uart_msg[50];
-    snprintf(uart_msg, sizeof(uart_msg), "Uart send1: %i \r\n", free_space);
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
-    HAL_Delay(10);*/
-    //UART_SEND("Send1\n\r");
-
-
-	 while (free_space < (uint16_t)(len + 10))
+	 while (free_space < (uint16_t)(total_size + 10))
 	 {
-		    /*HAL_Delay(10);
-		    char uart_msg[50];
-		    snprintf(uart_msg, sizeof(uart_msg), "Uart Att: %i \r\n", free_space);
-		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000); \
-		    HAL_Delay(10);*/
-	        //UART_SEND("SendAtt\n\r");
         osDelay(100);  // Attendre 100ms
 		if ((HAL_GetTick() - start_time) > 2000)
 		{
-			//LOG_ERROR("Queue full timeout after %lu ms", 2000);
 		    osMutexRelease(bufferMutex);
 		    log_write('E', log_w_err_uart_bloque, 0x02, 0x03, "uartRxBl");
 		    return 2;  // Timeout
@@ -718,33 +683,27 @@ uint8_t mess_enqueue(const uint8_t *data, uint8_t len)
 	    else
 	        free_space = (tail - head) - 1;
 	 }
-    //UART_SEND("Send2\n\r");
 
 	osStatus_t status = osMutexAcquire(bufferMutex, 5000);
 	if (status != osOK) return 3;
 
     uint16_t head_prov = head;
 
-    mess_buffer[head_prov] = len;
-    head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
-
-    for (uint8_t i = 0; i < len; i++) {
-        mess_buffer[head_prov] = data[i];
-        head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
-    }
+    uint8_t* mess_ptr = (uint8_t*)mess;
+        for (uint16_t i = 0; i < total_size; i++) {
+            mess_buffer[head_prov] = mess_ptr[i];
+            head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
+        }
 
     head = head_prov;
 
-	//osDelay(100);
-	//LOG_INFO("enqueue:head:%d tail:%d", head, tail);
-    //osDelay(100);
     osMutexRelease(bufferMutex);
     xTaskNotifyGive(Uart_TX_TaskHandle); // Notifier la tache UArt_TX
     return 0;
 }
 
 // Extraction d’un message
-uint8_t mess_dequeue(uint8_t *data, uint8_t *len)
+uint8_t mess_dequeue(out_message_t* mess)
 {
 	osStatus_t status = osMutexAcquire(bufferMutex, 10000);
 	if (status != osOK) return 4;
@@ -756,21 +715,15 @@ uint8_t mess_dequeue(uint8_t *data, uint8_t *len)
         return 1; // FIFO vide
     }
 
-    if (data == NULL || len == NULL)
-    {
-        osMutexRelease(bufferMutex);
-    	return 4;
-    }
 
-    *len = mess_buffer[tail];
-    tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+    uint16_t size = mess_buffer[tail];
 
 	//osDelay(300);
 	//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
     //osDelay(300);
 
     // Vérif longueur valide
-	if ((*len < 5) || (*len > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
+	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
 	{
 		head=0;
 		tail=0;
@@ -783,17 +736,18 @@ uint8_t mess_dequeue(uint8_t *data, uint8_t *len)
 						 (head - tail_prov) :
 						 (MESS_BUFFER_SIZE - (tail_prov - head));
 
-	if (available < *len) {
+	if (available < size) {
 		head=0;
 		tail=0;
 		osMutexRelease(bufferMutex);
 		return 3; // corruption : message incomplet
 	}
 
-    for (uint8_t i = 0; i < *len; i++) {
-        data[i] = mess_buffer[tail_prov];
-        tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
-    }
+    uint8_t* mess_ptr = (uint8_t*)mess;
+        for (uint16_t i = 0; i < size+4; i++) {
+            mess_ptr[i] = mess_buffer[tail_prov];
+            tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+        }
     tail = tail_prov;
 	//osDelay(300);
 	//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
@@ -805,8 +759,7 @@ uint8_t mess_dequeue(uint8_t *data, uint8_t *len)
 
 void Uart_TX_Tsk(void *argument)
 {
-    uint8_t msg[MESS_LG_MAX];
-    uint8_t len;
+    out_message_t mess;
     //uint32_t last_status_time = 0;
 
     //osDelay(100);
@@ -824,15 +777,15 @@ void Uart_TX_Tsk(void *argument)
 
         while (1)
         {
-			uint8_t stat = mess_dequeue(msg, &len);
+			uint8_t stat = mess_dequeue(&mess);
 
 			if (stat == 0) {
 				// ⭐ MESSAGE DISPONIBLE - Envoyer
-				HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, msg, len, 10000);
+				HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, mess.data, mess.length, 10000);
 				if (status != HAL_OK) {
 					code_erreur = code_erreur_envoi;
 					err_donnee1 = status;
-					err_donnee2 = len;
+					err_donnee2 = mess.length;
 				}
 			} else if (stat == 1) {
 				// ⭐ PAS DE MESSAGE (NORMAL) - Sortir de la boucle
@@ -841,7 +794,7 @@ void Uart_TX_Tsk(void *argument)
 				// ⭐ ERREUR DE mess_dequeue - Gérer l'erreur
 				code_erreur = code_erreur_dequeue;
 				err_donnee1 = stat;
-				err_donnee2 = len;
+				err_donnee2 = mess.length;
 				break;  // Sortir en cas d'erreur
 			}
 		}
@@ -852,11 +805,16 @@ void Uart_TX_Tsk(void *argument)
 }
 
 /**
- * @brief Envoyer un message LoRa
+ * @brief Envoyer un message LoRa : mise en pile d'anvoi
  * @param message: Message à envoyer (string)
  * @retval HAL_StatusTypeDef: Statut de l'opération
  */
-HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length, uint8_t dest)
+/*HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length, uint8_t dest)
+{
+	return 0;
+}*/
+
+/*HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length, uint8_t dest)
 {
     uint8_t radio_status;
     //uint16_t message_length = strlen(message);
@@ -889,7 +847,7 @@ HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length,
     }
 
     return status;
-}
+}*/
 
 /**
  * @brief Fonction principale de logging avec niveau de verbosité
@@ -934,25 +892,28 @@ void print_log(uint8_t level, const char* format, ...)
 		}
 
 		// Ajouter le préfixe
-		log_buffer[0] = dest_log;
-		log_buffer[1] = My_Address;
-		strcpy((char*)log_buffer+2, prefix);
+		log_buffer.data[0] = dest_log;
+		log_buffer.data[1] = My_Address;
+		strcpy((char*)log_buffer.data+2, prefix);
 
 		// Formatage des arguments
 		va_list args;
 		va_start(args, format);
-		vsnprintf((char*)log_buffer + strlen(prefix)+2, sizeof(log_buffer) - strlen(prefix) - 4, format, args);
+		vsnprintf((char*)log_buffer.data + strlen(prefix)+2, sizeof(log_buffer.data) - strlen(prefix) - 4, format, args);
 		va_end(args);
 
 		// Ajouter un retour à la ligne
-		strcat((char*)log_buffer, "\r\n");
+		strcat((char*)log_buffer.data, "\r\n");
 		//len_ASC+=2;
 
 		// Envoyer via UART
 		//HAL_UART_Transmit(&hlpuart1, (uint8_t*)log_buffer, strlen(log_buffer), 3000);
 		//envoie_mess_ASC("%s", log_buffer);
-		len_ASC = strlen((char*)log_buffer);
-		envoie_routage(log_buffer, len_ASC);
+		log_buffer.length = strlen((char*)log_buffer.data);
+		log_buffer.dest = dest_log;
+		log_buffer.type = 0; // ascii
+		log_buffer.param = 0;
+		envoie_routage(&log_buffer);
 	    xSemaphoreGive(log_mutex);
     }
 }
@@ -992,7 +953,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
   //    LOG_DEBUG("%i:%02X ", a, message_in[a]);
 
   //raz_timer_sleep ();
-  message[0] = message_in[1]; // emetteur devient le destinataire du futur message
+  message.data[0] = message_in[1]; // emetteur devient le destinataire du futur message
+  message.dest = message_in[1];
+  message.type =0;
+  message.param = 0;
+
   //emet_m = message[0];
 
   if (((message_in[0] & 0x7F) != My_Address) && ((message_in[0] & 0x7F) != '0'))  // Transfert ailleurs
@@ -1040,8 +1005,12 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           else  // message normal a transferer
           #endif
           {
-              memcpy (message, message_in, longueur_m + 1);
-              envoie_routage (message, longueur_m);  // envoi du message
+              memcpy (message.data, message_in, longueur_m + 1);
+              message.length = longueur_m+1;
+              message.param = 0;
+
+              if (message_in[0] & 80) message.type =1;
+              envoie_routage (&message);  // envoi du message
           }
       }
       else
@@ -1107,12 +1076,12 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             {
               longueur_m--;
             }
-          message[1] = 'S';  // Accusï¿½ reception ok : S1
-          message[2] = '1';
-          message[3] = car_fin_trame;
-          envoie_mess_ASC((const char*)message);
+          message.data[1] = 'S';  // Accuse reception ok : S1
+          message.data[2] = '1';
+          message.data[3] = car_fin_trame;
+          envoie_mess_ASC(param_def, (const char*)message.data);
           if (!crc)
-              message[2] = '0'; // si crc errone => envoi de S0
+              message.data[2] = '0'; // si crc errone => envoi de S0
       }
 
       if (crc)
@@ -1135,7 +1104,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                   ret=0;
                   if (!ret)
                   {
-                      envoie_mess_ASC("%cVAnal %i", message[0], ent_anal);
+                      envoie_mess_ASC(param_def, "%cVAnal %i", message.data[0], ent_anal);
                   }
               }
           }
@@ -1143,15 +1112,15 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           {
               if ( (message_in[4] =='O')  && (longueur_m==5))  // 1SLO
               {
-                  envoie_mess_ASC("1OKK");
+                  envoie_mess_ASC(param_def, "1OKK");
               }
               if ( (message_in[4] =='V')  && (longueur_m==5))  // 1SLV : version
               {
-                  envoie_mess_ASC("%cVer:%s", message[0], CODE_VERSION);
+                  envoie_mess_ASC(param_def, "%cVer:%s", message.data[0], CODE_VERSION);
               }
               if ( (message_in[4] =='T')  && (longueur_m==5))  // 1SLT : Type de node
               {
-                  envoie_mess_ASC("%cType:%s", message[0], CODE_TYPE);
+                  envoie_mess_ASC(param_def, "%cType:%c", message.data[0], CODE_TYPE);
               }
               if ( (message_in[4] =='B')  && (longueur_m==5))  // 1SLB
               {
@@ -1159,9 +1128,9 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             	  // optimum :uint8_t mess_bin[10] = {'U', 1, 'O', 'K'};
             	  // moins bien: memcpy(mess_bin, "U\1OK", 4);
             	  // pas bien  : sprintf((char*)mess_bin, "U%cOK", 1);
-            	  uint8_t mess_bin[10] = {'1', 1, 'O', 'K'};
 
-                  envoie_mess_bin(mess_bin);
+            	  memcpy(message.data, (uint8_t[]){'1', 1, 'O', 'K'}, 4);
+                  envoie_mess_bin(&message);
               }
               if ( (message_in[4] =='T') && (message_in[5] =='a') && (longueur_m==6))  // SLTa  Stack des taches
   				 check_stack_usage();
@@ -1203,10 +1172,21 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 
               if ( (message_in[4] =='R') && (message_in[5] =='A') && (longueur_m==6))  // SLR4 test radio sleep
             	  check_radio_hardware_configuration();
-              if ( (message_in[4] =='R') && (message_in[5] =='B') && (longueur_m==6))  // SLR4 test radio sleep
-            	  reset_radio_completely();
+              if ( (message_in[4] =='R') && (message_in[5] =='B') && (longueur_m==6))  // SLRB test radio sleep
+              {
+					uint8_t mess_lora[20] = "Mess LORA Test";
+					Radio.Send(mess_lora, strlen((char*)mess_lora));
+              };
               if ( (message_in[4] =='R') && (message_in[5] =='C') && (longueur_m==6))  // SLR4 test radio sleep
             	  try_radio_wakeup_all_commands();
+              if ( (message_in[4] =='R') && (message_in[5] =='D') && (longueur_m==8))  // SLRDxy TX paramx = y
+              {
+            	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLRDxy TX paramx = y
+              {
+            	  PrintRadioTxParam();
+              }
 
 
           }

@@ -157,7 +157,7 @@ void SubghzApp_Init(void)
   }
 
       // Démarrer la réception continue
-  Radio.Rx(0); // Timeout infini
+  //Radio.Rx(0); // Timeout infini
 
   /* USER CODE END SubghzApp_Init_2 */
 }
@@ -170,9 +170,12 @@ void SubghzApp_Init(void)
 static void OnTxDone(void)
 {
   /* USER CODE BEGIN OnTxDone */
-	LOG_INFO("LoRa TX: Message envoyé");
+	event_t evt = { EVENT_LORA_TX_DONE, 1, 0 };
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+		code_erreur = ISR_callback; 	err_donnee1 = 1; }
+
 	    // Redémarrer la réception après transmission
-	    Radio.Rx(0);
+	   // Radio.Rx(0);
 
   /* USER CODE END OnTxDone */
 }

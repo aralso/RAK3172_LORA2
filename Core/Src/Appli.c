@@ -384,12 +384,12 @@ void startDefTsk()
             messa[1] = 'S';  // Accusï¿½ reception ok : S1
             messa[2] = '1';
             messa[3] = car_fin_trame;
-            envoie_mess_ASC((const char*)messa);
+            envoie_mess_ASC(param_def, (const char*)messa);
         }
         if (test_val == 4)
         {
         	uint8_t messa = 'c';
-            envoie_mess_ASC("1te%cVAnal %i", messa, 12);
+            envoie_mess_ASC(param_def, "1te%cVAnal %i", messa, 12);
         }
         if (test_val == 5)
         	EEPROM_Read8(1, &value);
@@ -615,34 +615,39 @@ void Appli_Tsk(void *argument)
 					}
 					else  //canal libre
 					{
-						uint8_t mess_lora[20] = "Mess LORA Test";
-						uint8_t length = strlen((char*)mess_lora);
-						Radio.Send(mess_lora, length);
+						//uint8_t mess_lora[20] = "Mess LORA Test";
+						//uint8_t length = strlen((char*)mess_lora);
+						//Radio.Send(mess_lora, length);
 					}
 
+					break;
+				}
+				case EVENT_LORA_TX: {
+					LOG_INFO("Debut de transmission LORA");
+					// Actions pour début de phase de transmission
+					// TODO
 					break;
 				}
 				case EVENT_LORA_RX: {
-					LOG_INFO("LoRa message received event");
-					// Actions pour message LoRa reçu
-					HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); // LED ON
-					osDelay(500);
-					HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // LED OFF
+					LOG_INFO("message LORA reçu");
+					// Actions pour début de phase de transmission
+					// TODO
 					break;
 				}
 
-				case EVENT_LORA_TX: {
+				case EVENT_LORA_TX_DONE: {
 					LOG_INFO("LoRa message sent event");
 					// Actions pour message LoRa envoyé
-					for (int i = 0; i < 3; i++) {
-						HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-						osDelay(100);
-						HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-						osDelay(100);
-					}
+					// TODO
 					break;
 				}
 
+				case EVENT_LORA_REVEIL_BALISE : {
+					LOG_INFO("classe B : Fenetre ecoute balise Radio");
+					// action pour mettre la radio en RX et attendre la balise broadcast
+					// TODO action écoute balise
+					break;
+				}
 				case EVENT_UART_RX: {
 					//LOG_INFO("UART message received event");
 					in_message_t message_in;
@@ -704,7 +709,7 @@ void Appli_Tsk(void *argument)
 				    break;
 				}
 				case EVENT_TIMER_24h: {
-					envoie_mess_ASC("1Message periodique 24h\r\n");
+					envoie_mess_ASC(param_def, "1Message periodique 24h\r\n");
 
 					// Debug : afficher le temps restant avant la prochaine expiration
 					TickType_t expiry = xTimerGetExpiryTime(HTimer_24h);
