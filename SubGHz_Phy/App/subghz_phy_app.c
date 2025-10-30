@@ -27,6 +27,7 @@
 
 /* USER CODE BEGIN Includes */
 #include "fonctions.h"
+#include "lora.h"
 
 /* USER CODE END Includes */
 
@@ -170,12 +171,7 @@ void SubghzApp_Init(void)
 static void OnTxDone(void)
 {
   /* USER CODE BEGIN OnTxDone */
-	event_t evt = { EVENT_LORA_TX_DONE, 1, 0 };
-	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-		code_erreur = ISR_callback; 	err_donnee1 = 1; }
-
-	    // Redémarrer la réception après transmission
-	   // Radio.Rx(0);
+	lora_on_tx_done();
 
   /* USER CODE END OnTxDone */
 }
@@ -183,13 +179,7 @@ static void OnTxDone(void)
 static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraSnr_FskCfo)
 {
   /* USER CODE BEGIN OnRxDone */
-	LOG_INFO("LoRa RX: %d bytes, RSSI: %d dBm, SNR: %d", size, rssi, LoraSnr_FskCfo);
-
-	    // Envoyer un événement à votre application
-	    // send_event(EVENT_LORA_RX, SOURCE_LORA, size);
-
-	    // Redémarrer la réception
-	    Radio.Rx(0);
+	lora_on_rx_done(payload, size, rssi, LoraSnr_FskCfo);
 
   /* USER CODE END OnRxDone */
 }
@@ -197,27 +187,21 @@ static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraS
 static void OnTxTimeout(void)
 {
   /* USER CODE BEGIN OnTxTimeout */
-	 LOG_ERROR("LoRa TX: Timeout");
-	    // Redémarrer la réception
-	 Radio.Rx(0);
+	 lora_on_tx_timeout();
   /* USER CODE END OnTxTimeout */
 }
 
 static void OnRxTimeout(void)
 {
   /* USER CODE BEGIN OnRxTimeout */
-	LOG_DEBUG("LoRa RX: Timeout");
-	    // Redémarrer la réception
-	Radio.Rx(0);
+	lora_on_rx_timeout();
   /* USER CODE END OnRxTimeout */
 }
 
 static void OnRxError(void)
 {
   /* USER CODE BEGIN OnRxError */
-	LOG_ERROR("LoRa RX: Erreur");
-	// Redémarrer la réception
-	Radio.Rx(0);
+	lora_on_rx_error();
   /* USER CODE END OnRxError */
 }
 
@@ -225,13 +209,7 @@ static void OnRxError(void)
 
 static void OnCadDone(bool channelActivityDetected)
 {
-	event_t evt = { EVENT_CAD_DONE, SOURCE_LORA, channelActivityDetected ? 1 : 0 };
-
-	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
-	{
-		code_erreur = ISR_callback;
-		err_donnee1 = 2;
-	}
+	lora_on_cad_done(channelActivityDetected);
 }
 
 /* USER CODE END PrFD */

@@ -45,7 +45,9 @@ typedef enum  {
     EVENT_TIMER_20min,
 	EVENT_TIMER_LPTIM,
 	EVENT_UART_RAZ,
-	EVENT_CAD_DONE
+    EVENT_CAD_DONE,
+    EVENT_LORA_TX_STEP,
+    EVENT_LORA_ACK_TIMEOUT
 } EventId_t;
 
 #define TIMER_PERIOD_MS  2000   // 50s
@@ -95,9 +97,16 @@ typedef struct {
 #define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 5 secondes
 
 extern LPTIM_HandleTypeDef hlptim1;
+extern LPTIM_HandleTypeDef hlptim2;
 extern QueueHandle_t Event_QueueHandle;
 
 #define test_MAX 20
+
+// Programmation fine du réveil balise (classe B) via LPTIM1 compare
+void lptim_program_compare_advance_ms(uint32_t advance_ms);
+uint32_t lptim_get_seconds(void);
+extern volatile uint32_t lptim_epoch_s;
+void lptim2_schedule_ms(uint32_t delay_ms);
 extern uint8_t test_index;
 extern uint8_t test_var;
 extern uint32_t test_tab[test_MAX];

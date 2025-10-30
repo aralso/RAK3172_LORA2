@@ -20,10 +20,70 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include "radio.h"
 
 #include "stm32wlxx_hal_subghz.h"  // ← AJOUTER CETTE LIGNE
+#include "fonctions.h"  // pour lptim_program_compare_advance_ms
 
 #define ReseauAddr		0x23
+
+// Classes LoRaWAN simplifiées
+#define LORA_CLASS_A                0
+#define LORA_CLASS_B                1
+#define LORA_CLASS_C                2
+
+#define LORA_BROADCAST_ADDR         0x7D
+
+// Machine d’états non bloquante pour la phase TX/ACK/RX
+typedef enum {
+    TX_IDLE = 0,
+    TX_WAIT_CAD,
+    TX_SENDING,
+    TX_WAIT_ACK,
+    RX_RESPONSES
+} lora_tx_state_t;
+
+typedef struct radio_TxParam_s
+{
+	uint32_t freq;
+	uint8_t channel;
+	uint8_t DR;
+	RadioModems_t modem;
+	int8_t power;
+	uint32_t fdev;
+	uint32_t bandwidth;
+	uint32_t SF;
+	uint8_t coderate;
+	uint16_t preambleLen;
+	bool fixLen;
+	bool crcOn;
+	bool freqHopOn;
+	uint8_t hopPeriod;
+	bool iqInverted;
+	uint32_t timeout;
+} radio_TxParam_t;
+extern  lora_tx_state_t g_tx_state;
+
+// API de contrôle haute-niveau
+void lora_radio_init(void);
+void lora_set_class(uint8_t lora_class);
+void lora_handle_event_tx(void);
+void lora_handle_event_rx(void);
+void lora_tx_state_step(void);
+void lora_schedule_ack_timeout(uint32_t ms);
+void lora_tx_on_cad_result(bool channelBusy);
+void lora_classb_start_timers(void);
+void lora_classb_stop_timers(void);
+void lora_handle_classb_beacon_event(void);
+
+// Callbacks Radio → LoRa layer
+void lora_on_tx_done(void);
+void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
+void lora_on_tx_timeout(void);
+void lora_on_rx_timeout(void);
+void lora_on_rx_error(void);
+void lora_on_cad_done(bool channelActivityDetected);
 
 typedef struct
 {
@@ -62,5 +122,10 @@ void SetRadioTxParam (uint8_t param, uint8_t val);
 void PrintRadioTxParam(void);
 uint8_t mess_LORA_enqueue(out_message_t* mess);
 uint8_t mess_LORA_dequeue(out_message_t* mess);
+
+// Comptage LPTIM1 et calculs balise
+void lora_on_lptim1_10s_tick(void);
+void lora_get_time_since_last_and_to_next(uint32_t* elapsed_ms_since_last,
+                                          uint32_t* remaining_ms_to_next);
 
 #endif /* INC_LORA_H_ */

@@ -26,7 +26,7 @@ uint8_t table_routage[nb_ligne_routage][6] = {
     {'2', 'z', 7, 'H', 0, 0}
 };
 
-uint8_t param_def = 0; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
+uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
               // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
 
 /* gestion des erreurs
@@ -78,7 +78,6 @@ extern QueueHandle_t Event_QueueHandle;
 void Uart_RX_Tsk(void *argument);
 void Uart_TX_Tsk(void *argument);
 uint8_t Uart2_receive (uint8_t* data, uint8_t type);
-void traitement_rx (uint8_t*, uint8_t lg); // var :longueur n'inclut pas le car_fin_trame (inclus emetteur) : 4 pour RLT1
 void debug_uart_interrupt_init();
 
 /* Definitions for Uart2_RX_Task */
@@ -631,6 +630,8 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 			    retc = mess_LORA_enqueue(mess);
 		   }
   		   if (j==7) {
+  			    mess->dest = table_routage[i][3];
+			    retc = mess_LORA_enqueue(mess);
 			    //HAL_Delay(10);
 			    //char uart_msg[50];
 			    //snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
@@ -1186,6 +1187,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLRDxy TX paramx = y
               {
             	  PrintRadioTxParam();
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='F') && (longueur_m==6))  // SLRF  envoie mess lora
+              {
+                  envoie_mess_ASC(param_def, "BSLRG");
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='G') && (longueur_m==6))  // SLRG  mess recu du node
+              {
+                  LOG_INFO("mess recu SLRG");
               }
 
 

@@ -10,6 +10,7 @@
 #include <eeprom_emul.h>
 #include <log_flash.h>
 #include <main.h>
+#include <lora.h>
 #include "cmsis_os.h"
 #include "timers.h"
 #include <string.h>
@@ -39,6 +40,7 @@ uint8_t test_var;
 uint32_t test_tab[test_MAX];
 
 extern uint8_t uart_timeout_on;
+extern uint8_t cpt_process_lora_tx;
 
 extern UART_HandleTypeDef hlpuart1;
 extern osThreadId_t defaultTaskHandle;
@@ -223,7 +225,15 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 	if (hlptim->Instance == LPTIM1)
     {
 		counter++;
+		if (g_tx_state == TX_IDLE) cpt_process_lora_tx = 0;
+		else cpt_process_lora_tx++;
+		if (cpt_process_lora_tx > 10)  // Envoi en cours depuis plus de 100 secondes
+		{
+			g_tx_state = TX_IDLE;
+			code_erreur = erreur_LORA_TX;
+			err_donnee1 = 1;
 
+		}
 		/*event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
 		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 			code_erreur = ISR_callback; 	err_donnee1 = 1; }*/
@@ -231,29 +241,59 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
 			event_t evt = { EVENT_TIMER_20min, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-				code_erreur = ISR_callback; 	err_donnee1 = 5; }
+				code_erreur = ISR_callback; 		err_donnee1 = 5; }
 		}
 		else
 		{
 			event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-				code_erreur = ISR_callback; 	err_donnee1 = 1; }
+				code_erreur = ISR_callback; 		err_donnee1 = 1; }
 
 		}
 
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
 			event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-				code_erreur = ISR_callback; 	err_donnee1 = 6; }
+				code_erreur = ISR_callback; 		err_donnee1 = 6; }
 		}
 		#if CLASS == 'B'
 		if (counter % 3 == 0) {  // Toutes les 30 secondes : Ecoute balise du concentrateur
 			event_t evt = { EVENT_LORA_REVEIL_BALISE, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-				code_erreur = ISR_callback; 	err_donnee1 = 6; }
+				code_erreur = ISR_callback; 		err_donnee1 = 6; }
 		}
 		#endif
 	 }
+
+    // 10s par réveil LPTIM → incrémenter epoch secondes
+    lptim_epoch_s += 10;
+    lora_on_lptim1_10s_tick();
+}
+
+// Recalage fin des réveils balise: programme le compare pour se réveiller
+// quelques millisecondes avant la balise prochaine, en compensant la dérive
+// Paramètre: advance_ms = marge avant balise (2..50ms recommandé)
+void lptim_program_compare_advance_ms(uint32_t advance_ms)
+{
+    // LPTIM1 clocké par LSE via MSP, prescaler DIV16.
+    // Fréquence LPTIM1 effective = 32768 / 16 = 2048 Hz → ~0,488 ms/tick
+    const float tick_ms = 1000.0f / 2048.0f;
+    uint32_t ticks = (uint32_t)(advance_ms / tick_ms);
+    if (ticks == 0) ticks = 1;
+
+    uint32_t arr = hlptim1.Instance->ARR;
+	uint32_t cmp = (arr > ticks) ? (arr - ticks) : 1;
+
+	__HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_CMPM);
+	__HAL_LPTIM_COMPARE_SET(&hlptim1, cmp);
+	__HAL_LPTIM_CLEAR_FLAG(&hlptim1, LPTIM_FLAG_CMPM);
+	__HAL_LPTIM_ENABLE_IT(&hlptim1, LPTIM_IT_CMPM);}
+
+// Compteur d'epoch basé LPTIM1: initialise et expose un compteur secondes persistant en STOP
+volatile uint32_t lptim_epoch_s = 0;
+uint32_t lptim_get_seconds(void)
+{
+    return lptim_epoch_s;
 }
 
 /*void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
@@ -1176,5 +1216,40 @@ void test_stop_mode(void)
         LOG_ERROR("Stop mode NOT working - CPU stayed active!");
     } else {
         LOG_INFO("Stop mode working - CPU was in low power");
+    }
+}
+
+// Planification non bloquante via LPTIM2 pour sortie de STOP
+static void lptim2_program_ticks_and_enable(uint32_t ticks)
+{
+    if (ticks == 0) ticks = 1;
+    __HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
+    __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    __HAL_LPTIM_COMPARE_SET(&hlptim2, ticks);
+    __HAL_LPTIM_ENABLE_IT(&hlptim2, LPTIM_IT_CMPM);
+    HAL_LPTIM_Counter_Start_IT(&hlptim2, 0xFFFF);
+}
+
+
+void lptim2_schedule_ms(uint32_t delay_ms)
+{
+    const float tick_ms = 1000.0f / 2048.0f;
+    uint32_t ticks = (uint32_t)(delay_ms / tick_ms);
+    lptim2_program_ticks_and_enable(ticks);
+}
+
+void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
+{
+    if (Event_QueueHandle == NULL)  return;
+
+    if (hlptim->Instance == LPTIM2)
+    {
+        // Décider dynamiquement: si on attend un ACK, lever l'event ACK; sinon TX_STEP
+        // Heuristique simple: on regarde si un TX_WAIT_ACK est probable côté Lora.c via un flag global externe si nécessaire.
+        // Par défaut, lever TX_STEP (l'état décidera).
+        event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+        xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+        __HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
+        __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
     }
 }

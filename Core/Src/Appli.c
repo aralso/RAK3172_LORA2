@@ -606,32 +606,28 @@ void Appli_Tsk(void *argument)
 				}
 
 				case EVENT_CAD_DONE: {
-					LOG_INFO("Cad Done : %i", evt.type);
-					if (evt.type)
-					{  // canal occupé
-			            LOG_INFO("Canal occupé - Attendre avant retry");
-			            osDelay(2000 + (rand() % 2000)); // Délai aléatoire 1-3s
-			            Radio.StartCad(); // relancer startCad
-					}
-					else  //canal libre
-					{
-						//uint8_t mess_lora[20] = "Mess LORA Test";
-						//uint8_t length = strlen((char*)mess_lora);
-						//Radio.Send(mess_lora, length);
-					}
+					LOG_INFO("Cad Done : %i", evt.data);
+					lora_tx_on_cad_result(evt.data != 0);
 
 					break;
 				}
 				case EVENT_LORA_TX: {
 					LOG_INFO("Debut de transmission LORA");
-					// Actions pour début de phase de transmission
-					// TODO
+					lora_handle_event_tx();
 					break;
 				}
 				case EVENT_LORA_RX: {
 					LOG_INFO("message LORA reçu");
-					// Actions pour début de phase de transmission
-					// TODO
+					lora_handle_event_rx();
+					break;
+				}
+				case EVENT_LORA_TX_STEP: {
+					lora_tx_state_step();
+					break;
+				}
+				case EVENT_LORA_ACK_TIMEOUT: {
+					// Timeout ACK → retry ou passage à l’état suivant
+					lora_tx_state_step();
 					break;
 				}
 
@@ -644,8 +640,7 @@ void Appli_Tsk(void *argument)
 
 				case EVENT_LORA_REVEIL_BALISE : {
 					LOG_INFO("classe B : Fenetre ecoute balise Radio");
-					// action pour mettre la radio en RX et attendre la balise broadcast
-					// TODO action écoute balise
+					lora_handle_classb_beacon_event();
 					break;
 				}
 				case EVENT_UART_RX: {

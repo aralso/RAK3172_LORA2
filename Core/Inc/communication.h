@@ -64,9 +64,11 @@ extern uint8_t param_def;
 #define ISR_fifo_full		   0x26
 #define ISR_callback		   0x27
 #define erreur_mess            0x2F
+#define erreur_LORA_TX		   0x30
 
 // Code erreur pour log_write :
 #define log_w_err_uart_bloque	0x01
+#define log_w_reseau_occupe		0x02
 
 #define UART_SEND(msg) do { \
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
@@ -104,6 +106,7 @@ extern UartStruct UartSt[NB_UART];
 void reception_message_Uart2(in_message_t *msg);
 uint8_t envoie_routage(out_message_t* message);
 void verif_timout_uart_rx(void);
+void traitement_rx (uint8_t*, uint8_t lg); // var :longueur n'inclut pas le car_fin_trame (inclus emetteur) : 4 pour RLT1
 
 
 // Fonction principale de logging

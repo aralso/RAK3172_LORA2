@@ -19,7 +19,8 @@
 
 #define CODE_VERSION  "1.8"
 #define CODE_TYPE 'A'  // A:End_node Radar
-#define CLASS 'B'  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
+#define END_NODE
+#define CLASS LORA_CLASS_B  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 
 extern uint8_t test_val;
 extern RTC_HandleTypeDef hrtc;
