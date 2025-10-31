@@ -40,9 +40,22 @@ typedef enum {
     TX_IDLE = 0,
     TX_WAIT_CAD,
     TX_SENDING,
+	TX_SENT,
+	TX_ACK_RECU,
     TX_WAIT_ACK,
     RX_RESPONSES
 } lora_tx_state_t;
+
+typedef struct lora_etat_s
+{
+	uint8_t mess_envoy_ok;
+	uint8_t mess_renvoyes;
+	uint8_t mess_envoy_supp;
+	uint8_t radio_rx;
+	uint8_t mess_recu_ok;
+	uint8_t lora_tx_timeout;
+	uint8_t lora_rx_error;
+} lora_etat_t;
 
 typedef struct radio_TxParam_s
 {
@@ -73,9 +86,9 @@ void lora_handle_event_rx(void);
 void lora_tx_state_step(void);
 void lora_schedule_ack_timeout(uint32_t ms);
 void lora_tx_on_cad_result(bool channelBusy);
-void lora_classb_start_timers(void);
-void lora_classb_stop_timers(void);
 void lora_handle_classb_beacon_event(void);
+void relance_radio_rx(uint8_t actif);
+void relance_rx(uint8_t actif);  // envoie vers l'evenement appli
 
 // Callbacks Radio → LoRa layer
 void lora_on_tx_done(void);
@@ -122,6 +135,7 @@ void SetRadioTxParam (uint8_t param, uint8_t val);
 void PrintRadioTxParam(void);
 uint8_t mess_LORA_enqueue(out_message_t* mess);
 uint8_t mess_LORA_dequeue(out_message_t* mess);
+uint8_t mess_LORA_dequeue_fictif(void);
 
 // Comptage LPTIM1 et calculs balise
 void lora_on_lptim1_10s_tick(void);

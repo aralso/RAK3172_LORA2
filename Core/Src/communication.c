@@ -100,6 +100,7 @@ const osThreadAttr_t Uart_TX_Task_attributes = {
 // Variable globale pour le niveau de verbosité
 static uint8_t current_log_level = CURRENT_LOG_LEVEL;
 
+in_message_t message_recu;
 
 static uint8_t mess_buffer[MESS_BUFFER_SIZE];
 static uint16_t head = 0;

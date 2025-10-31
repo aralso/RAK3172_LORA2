@@ -136,13 +136,13 @@ void SubghzApp_Init(void)
 
   /* USER CODE BEGIN SubghzApp_Init_2 */
 
-  configure_radio_parameters();
+  lora_radio_init();
 
   uint8_t radio_status;
   if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
-	  LOG_INFO("Radio status avant Rx(0): 0x%02X", radio_status);
+	  LOG_INFO("Radio status apres init : 0x%02X", radio_status);
 
-	  if (radio_status == 0x00) {
+	  /*if (radio_status == 0x00) {
 		  LOG_ERROR("❌ Radio inactif - Réveil nécessaire");
 
 		  // Réveiller le radio
@@ -154,7 +154,7 @@ void SubghzApp_Init(void)
 		  if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
 			  LOG_INFO("Radio status après réveil: 0x%02X", radio_status);
 		  }
-	  }
+	  }*/
   }
 
       // Démarrer la réception continue

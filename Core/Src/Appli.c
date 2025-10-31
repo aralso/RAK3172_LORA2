@@ -616,13 +616,15 @@ void Appli_Tsk(void *argument)
 					lora_handle_event_tx();
 					break;
 				}
-				case EVENT_LORA_RX: {
-					LOG_INFO("message LORA reçu");
-					lora_handle_event_rx();
-					break;
-				}
 				case EVENT_LORA_TX_STEP: {
 					lora_tx_state_step();
+					break;
+				}
+				case EVENT_LORA_RX: {
+					LOG_INFO("message LORA reçu len:%i rssi:%i snr:%i mess:%s", evt.data, message_recu.rssi, \
+							message_recu.snr, message_recu.data);
+					traitement_rx(message_recu.data, evt.data);
+					//lora_handle_event_rx();
 					break;
 				}
 				case EVENT_LORA_ACK_TIMEOUT: {
@@ -643,27 +645,18 @@ void Appli_Tsk(void *argument)
 					lora_handle_classb_beacon_event();
 					break;
 				}
-				case EVENT_UART_RX: {
-					//LOG_INFO("UART message received event");
-					in_message_t message_in;
-			        if (xQueueReceive(in_message_queue, &message_in, portMAX_DELAY) == pdPASS)
-			        {
-			            // Traiter le message selon son type
-						reception_message_Uart2(&message_in);
-			        }
+
+				case EVENT_RELANCE_RX: {
+					relance_radio_rx((uint8_t)evt.data);
+					if (evt.source == 6)
+						LOG_ERROR("Lora error RX");
 					break;
 				}
 
-
 				case EVENT_ERROR: {
+					relance_radio_rx((uint8_t)evt.data);
 					LOG_ERROR("Error event - data: %d", evt.data);
 					// Actions pour erreur
-					for (int i = 0; i < 5; i++) {
-						HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-						osDelay(50);
-						HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-						osDelay(50);
-					}
 					break;
 				}
 
@@ -682,6 +675,17 @@ void Appli_Tsk(void *argument)
 					HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
 					osDelay(100);
 					HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+					break;
+				}
+
+				case EVENT_UART_RX: {
+					//LOG_INFO("UART message received event");
+					in_message_t message_in;
+			        if (xQueueReceive(in_message_queue, &message_in, portMAX_DELAY) == pdPASS)
+			        {
+			            // Traiter le message selon son type
+						reception_message_Uart2(&message_in);
+			        }
 					break;
 				}
 

@@ -90,6 +90,9 @@ typedef struct {
     uint8_t length;          // Longueur du message
     uint8_t type;            // Type : 0=ASCII, 1=Binaire
     uint8_t source;          // Source (UART1, UART2, etc.)
+    int16_t rssi;
+    int8_t snr;
+    uint8_t param;
     uint8_t data[MESS_LG_MAX];        // Données du message
 } in_message_t;
 
@@ -102,6 +105,7 @@ typedef struct {
 } out_message_t;
 
 
+extern in_message_t message_recu;
 extern UartStruct UartSt[NB_UART];
 void reception_message_Uart2(in_message_t *msg);
 uint8_t envoie_routage(out_message_t* message);
