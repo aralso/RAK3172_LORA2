@@ -593,6 +593,7 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	uint8_t destinataire, i, j, retc;
 	retc=1;
 
+
 	destinataire = mess->dest;
 
 	if (((destinataire == My_Address) && (My_Address!='1')) || (destinataire == '0'))   // envoi sur soi-meme -loop
@@ -606,6 +607,8 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	}
 	else
 	{
+
+
 	  j = 0;
 	  for (i = 0; i < nb_ligne_routage; i++) // recherche de la liaison a utiliser dans la table de routage
 	  {
@@ -618,6 +621,8 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	  }
 	  if (j)
 	  {
+		  LOG_INFO("AD j:%i", j);
+
 		   if (j==3)
 			   retc = mess_enqueue(mess);
 		   if (j==6)
@@ -633,6 +638,7 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
   		   if (j==7) {
   			    mess->dest = table_routage[i][3];
 			    retc = mess_LORA_enqueue(mess);
+			    //LOG_INFO("enqueue:%i", retc);
 			    //HAL_Delay(10);
 			    //char uart_msg[50];
 			    //snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
@@ -676,7 +682,6 @@ uint8_t mess_enqueue(out_message_t* mess)
         osDelay(100);  // Attendre 100ms
 		if ((HAL_GetTick() - start_time) > 2000)
 		{
-		    osMutexRelease(bufferMutex);
 		    log_write('E', log_w_err_uart_bloque, 0x02, 0x03, "uartRxBl");
 		    return 2;  // Timeout
 		}
@@ -1094,7 +1099,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               rxrf_numero_device=0;
           #endif
 
-          // ******************************** AAAAAAAAAAAAAAAAAAAAA  ********************
+          // ******************************** AAAAAAAAAAAAABAAAAAAA  ********************
 
           if ((message_in[2] == 'A') && (message_in[3] == 'L')) // AL Lecture entree analogique
           {
@@ -1197,8 +1202,17 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               {
                   LOG_INFO("mess recu SLRG");
               }
-
-
+              if ( (message_in[4] =='R') && (message_in[5] =='T') && (longueur_m==6))  // SLRT  Etat lora transmission
+              {
+                  LOG_INFO("etat LORA Tx: ok:%i renvoi:%i supp:%i timeout:%i busy:%i trop long:%i", \
+                		  lora_etat.mess_envoy_ok, lora_etat.mess_renvoyes, lora_etat.mess_envoy_supp, lora_etat.lora_tx_timeout, \
+						  lora_etat.channel_busy, lora_etat.tx_trop_long);
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='R') && (longueur_m==6))  // SLRR  Etat lora reception
+              {
+                  LOG_INFO("etat LORA Rx: ok:%i radio:%i error:%i", \
+                		  lora_etat.mess_recu_ok, lora_etat.radio_rx, lora_etat.lora_rx_error);
+              }
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Test eeprom/log_flash
           {
@@ -1209,6 +1223,15 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			     } else {
 				    LOG_ERROR("Erreur écriture EEPROM ");
 			     }
+			  }
+			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora
+			  {
+                  envoie_mess_ASC(param_def, "AOKK");
+			  }
+			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param xy
+			  {
+				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
+				 LOG_INFO("param : %02X", param_def);
 			  }
 			  if ( (message_in[4] =='R')  && (longueur_m==6))  // Lecture eeprom  1TER1
 			  {

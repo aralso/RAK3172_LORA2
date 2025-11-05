@@ -12,7 +12,8 @@
 #include "radio_conf.h"               // Configuration radio
 #include "Region.H"
 #include "RegionEU868.h"
-
+#include "radio_driver.h"  // ⭐ AJOUTER pour SUBGRF_GetIrqStatus
+#include "stm32wlxx_hal_subghz.h"  // ⭐ AJOUTER pour les constantes SUBGHZ_IT_*
 #define DR_0	0
 #define DR_1	1
 #define DR_2	2
@@ -27,15 +28,20 @@
 
 double floor (double);
 struct radio_TxParam_s radio_TxParam;
+struct radio_RxParam_s radio_RxParam;
 uint8_t frame_tx[3 + 2 + MESS_LG_MAX];
 uint8_t cpt_process_lora_tx = 0;
 struct lora_etat_s lora_etat;
 
 lora_tx_state_t g_tx_state = TX_IDLE;
+lora_rx_state_t g_rx_state = RX_IDLE;
 static out_message_t g_tx_msg;
 static uint8_t g_cad_fail_count = 0; // essais CAD infructueux successifs
 static uint8_t cpt_renvoi_message = 0;
+static uint8_t tx_rx_apres=0;
 static uint8_t nb_messages_envoyes=0;
+static uint8_t mess_rx_dernier = 0;
+uint8_t att_cad=0;
 
 static uint8_t lora_buff[MESS_BUFFER_SIZE];
 static uint16_t lora_head = 0;
@@ -48,6 +54,8 @@ static volatile uint32_t g_lptim1_10s_since_beacon = 0; // nb déclenchements LP
 
 extern QueueHandle_t Event_QueueHandle;
 extern osThreadId_t Uart_TX_TaskHandle;
+
+void fin_phase_transmission();
 
 // Configuration réseau
 #ifndef My_Address
@@ -214,6 +222,9 @@ uint8_t SendFrameModif( uint8_t channel )
 
 void configure_radio_parameters(void)
 {
+
+	lora_bufferMutex = osMutexNew(NULL);
+
     // 1. Vérifier que la fréquence est supportée
     /*if (!Radio.CheckRfFrequency(868100000UL)) {
         LOG_ERROR("Fréquence 868.1 MHz non supportée");
@@ -244,6 +255,13 @@ void configure_radio_parameters(void)
         true                  // Continuous RX
     );
 
+    // SUBGRF_SetStopRxTimerOnPreambleDetect( true );  // ⭐ Ligne 977
+    // ⭐ Ligne ~1041 : Configurer timeout absolu à 20ms
+        // Le timeout absolu compte le temps même sans symbole
+        // Format: SubgRf.RxTimeout << 6 en ticks radio
+        // Pour 20ms avec radio à 32kHz: calculer selon votre clock
+     //   SubgRf.RxTimeout = 20;  // ou calculer : (20 * freq_radio_kHz) / 64
+    // pas de symbolTimeout
 
     // 5. Configuration transmission LoRa
     Radio.SetTxConfig(
@@ -319,6 +337,7 @@ static void lora_build_frame(const out_message_t* src, lora_TxPacket* tx)
     memcpy(tx->payload, src->data, tx->len);
 }
 
+// mess:OKK => AUOKK => lg:11
 static void lora_send_packet(const lora_TxPacket* tx)
 {
     // Construction sur le fil: [dest][reseau][My_Address][param][len][payload]
@@ -370,6 +389,8 @@ void lora_set_class(uint8_t lora_class)
 
 void lora_tx_state_step(void)
 {
+    LOG_INFO("tx:%i  rx:%i", g_tx_state,  g_rx_state);
+
     switch (g_tx_state) {
     case TX_IDLE: {
         bool msg_loaded = false;
@@ -378,23 +399,39 @@ void lora_tx_state_step(void)
             if (mess_LORA_dequeue(&g_tx_msg) == 0) {
                 msg_loaded = true;
                 nb_messages_envoyes ++;
+                if (g_tx_msg.param & 0x20) tx_rx_apres=1;  // RX apres transmission
                 g_tx_state = TX_WAIT_CAD;
             }
             else // pas/plus de message dans pile d'envoi
             {
-                if (g_lora_class == LORA_CLASS_C)
-                	Radio.Rx(0);
-                else
-                	if (nb_messages_envoyes) // si on a deja envoye au moins 1 message => RX
-                    	Radio.Rx(RX_delai);
-                	else
-                		Radio.Sleep();  // rien à envoyer => fin
+            	if (nb_messages_envoyes) // au moins 1 mess envoyé
+            		fin_phase_transmission();
+            	else  // aucun envoi
+            	{
+            		// rien à faire
+            	}
                 break;
             }
         }  // continue directement sur TX_WAIT_CAD
     }
-    case TX_WAIT_CAD:
-        // attend EVENT_CAD_DONE dans Appli
+    case TX_WAIT_CAD: {
+    	// vérifier si l'on n'est pas en train de recevoir un message
+    	RadioState_t status = Radio.GetStatus();
+    	if (status == RF_RX_RUNNING) {
+    	    uint16_t irqStatus = SUBGRF_GetIrqStatus();
+    	    if (irqStatus & (IRQ_PREAMBLE_DETECTED | IRQ_SYNCWORD_VALID | IRQ_HEADER_VALID)) {  // Radio en train de recevoir
+    	    	att_cad = 1;
+  	    		lptim2_schedule_ms(100);  // 100 millisecondes
+    	    	break;
+    	    }
+    	 }
+    	// vérifier que l'on n'est pas en train d'emettre (un ack)
+    	if (status == RF_TX_RUNNING) {
+    	    // Radio en train d'émettre, attendre
+	    	att_cad = 2;
+    	    lptim2_schedule_ms(100);  // Attendre 100ms
+    	    break;
+    	}
         // verifier si fenetre d'envoi ok
         if (g_lora_class == LORA_CLASS_B) {
             uint32_t elapsed_ms = 0, remaining_ms = 0;
@@ -404,29 +441,42 @@ void lora_tx_state_step(void)
             need += 100; // marge
             if (remaining_ms > 0 && (TimerTime_t)remaining_ms <= need) {
                 uint32_t delay_ms = remaining_ms + 1000; // 1000ms après balise
+    	    	att_cad = 3;
                 lptim2_schedule_ms(delay_ms);
                 break;
             }
         }
+        //g_tx_state = TX_SENDING;
         // vérifier si Canal libre
         Radio.StartCad();
+    	att_cad = 4;
+        // attend EVENT_CAD_DONE dans Appli
         break;
+    }
     case TX_SENDING: {
+    	att_cad=0;
         lora_TxPacket tx;
         lora_build_frame(&g_tx_msg, &tx);
+
+        char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+        char *p = hex_str;
+
+        for (uint8_t i = 0; i < tx.len && i < sizeof(tx.payload); i++) {
+            p += sprintf(p, "%02X ", tx.payload[i]);  // Espace entre chaque octet
+        }
+        LOG_INFO("tx: dest:%c lg:%i %02X %s", tx.destAddr, tx.len, tx.param, hex_str);
         lora_send_packet(&tx);
         break;
     }
     case TX_SENT: {
+        //LOG_INFO("tx sent");
         if (g_tx_msg.param & 0x10)  // Ack non requis
         {  // succes d'envoi
         	lora_etat.mess_envoy_ok++;
             if (g_tx_msg.param & 0x1)  // dernier message
             {
             	// fin phase transmission , début phase réception
-            	g_tx_state = RX_RESPONSES;
-                event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-                xQueueSend(Event_QueueHandle, &evt, 0);
+        		fin_phase_transmission();
             }
             else  // encore des messages a envoyer
             {
@@ -438,8 +488,8 @@ void lora_tx_state_step(void)
         }
         else // attendre ack requis
         {
-        	Radio.Rx(RX_delai);
 			g_tx_state = TX_WAIT_ACK;
+        	Radio.Rx(RX_delai);
 			// Programmer le timeout ACK via LPTIM2 (non bloquant et compatible STOP)
 			//lptim2_schedule_ms(2000);
         }
@@ -449,9 +499,7 @@ void lora_tx_state_step(void)
         if (g_tx_msg.param & 0x1)  // dernier message
         {
         	// fin phase transmission , début phase réception
-        	g_tx_state = RX_RESPONSES;
-            event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-            xQueueSend(Event_QueueHandle, &evt, 0);
+    		fin_phase_transmission();
         }
         else  // encore des messages a envoyer
         {
@@ -462,7 +510,7 @@ void lora_tx_state_step(void)
         }
     	break;
     }
-    case TX_WAIT_ACK:  // reçu un timeout => ack non reçu => on renvoie le message
+    case TX_WAIT_ACK: {  // reçu un timeout => ack non reçu => on renvoie le message
         // attend EVENT_LORA_ACK_TIMEOUT ou un RX OnRxDone traitant l'ACK
     	//verif compteur_envoi avec param
     	cpt_renvoi_message++;
@@ -470,6 +518,7 @@ void lora_tx_state_step(void)
     	uint8_t val = (g_tx_msg.param & 6) > 1;  // bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
     	if ( ((val==1) && (cpt_renvoi_message<2)) || ((val==2) && (cpt_renvoi_message<5)) )  // bits 1 et 2
 		{
+    		// nota : on pourrait ajouter un délai de 3 secondes avec lptim2
     		lora_etat.mess_renvoyes++;
 			g_tx_state = TX_WAIT_CAD;
 			event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
@@ -479,19 +528,263 @@ void lora_tx_state_step(void)
     	{
     		// supression message
     		lora_etat.mess_envoy_supp++;
-    		// puis passage en RX
-        	g_tx_state = RX_RESPONSES;
-            event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-            xQueueSend(Event_QueueHandle, &evt, 0);
+        	// fin phase transmission , début phase réception
+    		fin_phase_transmission();
     	}
         break;
-
-    case RX_RESPONSES:  // fin phase transmission , début phase réception
+    }
+    case RX_RESPONSES: { // fin phase transmission , début phase réception
     	nb_messages_envoyes = 0;
-        if (g_lora_class == LORA_CLASS_C) Radio.Rx(0); else Radio.Rx(RX_delai);
+    	tx_rx_apres=0;
+        if (g_lora_class == LORA_CLASS_C) {
+        	Radio.Rx(0);
+            lptim2_schedule_ms(RX_delai);  // pour repasser ensuite en TX_IDLE
+        }
+        else Radio.Rx(RX_delai);
         //g_tx_state = TX_IDLE;
         break;
     }
+    }
+    LOG_INFO("            tx:%i  rx:%i", g_tx_state,  g_rx_state);
+}
+
+void fin_phase_transmission()
+{
+	// fin phase transmission , début phase réception
+	if (tx_rx_apres)
+	{
+		g_tx_state = RX_RESPONSES;
+		Radio.Rx(RX_delai);
+	}
+	else // fin process TX_RX
+	{
+		relance_radio_rx(0);
+		g_tx_state = TX_IDLE;
+		// verif s'il faut redémarrer un nouveau process TX - un peu d'attente
+		if (mess_LORA_dequeue_fictif()==0)
+		{
+            lptim2_schedule_ms(RX_delai);
+		}
+	}
+	nb_messages_envoyes = 0;
+	tx_rx_apres=0;
+}
+
+// =======
+// Bridges
+// =======
+void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
+{
+	if (test_index < test_MAX)
+		test_tab[test_index++] = g_tx_state;
+
+	if (g_rx_state == RX_WAIT_ACK_SENT)
+	{
+		relance_radio_rx(1);
+		if (mess_rx_dernier)  // dernier RX
+		{
+			g_tx_state = TX_IDLE;
+			uint8_t vide = mess_LORA_dequeue_fictif();  // 0:mess
+			if (!vide) // mess a envoyer
+			{
+				event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+		    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 1;}
+			}
+		}
+		else
+			g_rx_state = RX_ATTENTE;  // attend message suivant
+		mess_rx_dernier=0;
+	}
+	else if (g_tx_state == TX_SENDING)
+    {
+    	g_tx_state = TX_SENT;
+    	event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 2;}
+    }
+	else
+	{
+	   relance_radio_rx(1);
+	   code_erreur = erreur_LORA_TX;  // 2
+	   err_donnee1 = 2;
+	}
+}
+
+// recoit : erreurs, autres dest, balise, ack, messages normaux et broadcast
+void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
+{
+    (void)rssi; (void)snr;
+    g_rx_state =  RX_MESS_RECU;
+    lora_etat.radio_rx++;
+
+    // payload minimal: [dest][reseau][emetteur][param][len][message]
+    if (size < 5) {
+    	relance_radio_rx(1);
+    	g_rx_state = RX_IDLE;
+        return;
+    }
+
+    // message pour un autre destinataire
+    uint8_t dest = payload[0] & 0x7F;
+    if (((dest != My_Address) && (dest != LORA_BROADCAST_ADDR)) || (payload[1] != ReseauAddr)) {
+    	relance_radio_rx(1);
+    	g_rx_state = RX_IDLE;
+        return;
+    }
+
+    // message reçu pour ce node
+    uint8_t len = payload[4];
+    message_recu.length = payload[4];
+    message_recu.rssi = rssi;
+    message_recu.snr = snr;
+    message_recu.param = payload[3];
+    if (len > MESS_LG_MAX) len = MESS_LG_MAX;
+
+    // Contrainte IRQ: si on est en contexte IRQ, éviter traitement lourd
+    // Heuristique: utiliser l’API FromISR uniquement dans IRQ, sinon traitement direct
+    //BaseType_t inIsr = xPortIsInsideInterrupt();
+    // Détection balise: "BB" au début du payload
+    bool is_beacon = (dest == LORA_BROADCAST_ADDR && len >= 2 && len <= 3 && payload[5] == 'B' && payload[6] == 'B');
+    //if (!inIsr) {
+	if (is_beacon) {
+		// Prochaine balise attendue dans 3 minutes (basé sur LPTIM epoch si dispo)
+		uint32_t now_s = lptim_get_seconds();
+		g_next_beacon_at_ms = (now_s * 1000) + 180000;
+		g_lptim1_10s_since_beacon = 0;
+		// Recalage fin: viser un réveil très proche de la prochaine balise
+		// Marge initiale 10 ms, pourra être ajustée dynamiquement
+		lptim_program_compare_advance_ms(10);
+
+		// Si présence d’une adresse de destinataire immédiat (payload[7])
+		if ((len >= 3) && (payload[7] == My_Address))
+		{
+			// Si c’est notre adresse, revient en RX continu pour recevoir le message
+			g_rx_state = RX_ATTENTE; // attend message
+			relance_radio_rx(1);
+		}
+		else
+	    	g_rx_state = RX_IDLE;
+
+	}
+	else if (len==2 && payload[5]=='A' && payload[6]=='C')  // Ack recu
+	{
+		if (g_tx_state == TX_WAIT_ACK)
+			g_tx_state = TX_ACK_RECU;
+		else
+		{
+			code_erreur = erreur_LORA_TX;  // 3
+			err_donnee1 = 3;
+			err_donnee2 = g_tx_state;
+		}
+		g_rx_state = RX_IDLE;
+		relance_radio_rx(1);
+		event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 3;}
+	}
+	else //message normal
+	{
+		// Répondre ACK si requis
+		uint8_t ack=0;
+		if ((dest != LORA_BROADCAST_ADDR) && ((message_recu.param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
+			ack=1;
+			uint8_t ack[7] = { CONCENTRATOR_ADDR, ReseauAddr, My_Address, 0,2,'A', 'C' };
+			mess_rx_dernier = message_recu.param & 1;
+			g_rx_state = RX_WAIT_ACK_SENT;
+			Radio.Send(ack, 7);
+		}
+		else
+		{
+			if (message_recu.param & 1)  // dernier RX
+				g_rx_state = RX_IDLE;
+			else g_rx_state = RX_ATTENTE;  // attend message rx suivant
+			relance_radio_rx(1);
+		}
+
+		// Traitement applicatif standard - nota :ack pas encore envoyé
+		memcpy(message_recu.data, &payload[5], len);
+		event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
+    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 4;}
+
+		if (!ack) // sinon attendre ack sent
+		{
+			if (message_recu.param & 1)  // dernier RX
+			{
+				g_tx_state = TX_IDLE;
+				uint8_t vide = mess_LORA_dequeue_fictif();  // 0:mess
+				if (!vide) // mess a envoyer
+				{
+					event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+			    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 5;}
+				}
+			}
+		}
+	}
+}
+
+// suite émission de ack et message
+void lora_on_tx_timeout(void)
+{
+    // Relancer RX et notifier
+	lora_etat.lora_tx_timeout++;
+	g_tx_state = TX_IDLE;
+
+	if (nb_messages_envoyes) nb_messages_envoyes--;
+    event_t evt = { EVENT_ERROR, SOURCE_LORA, nb_messages_envoyes };
+	nb_messages_envoyes = 0;
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 6;}
+}
+
+// ack non recu, pas de message à recevoir
+void lora_on_rx_timeout(void)
+{   // soit on attendait un Ack non reçu, soit on attendait un message non reçu
+	if (g_tx_state == TX_WAIT_ACK)  // Ack non reçu
+	{
+        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
+	}
+	else  // pas de message a recevoir => passage en transmission
+	{
+		g_tx_state = TX_IDLE;
+        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 8;}
+	}
+}
+
+void lora_on_rx_error(void)
+{
+	lora_etat.lora_rx_error++;
+
+    event_t evt = { EVENT_RELANCE_RX, 6, nb_messages_envoyes };
+	nb_messages_envoyes = 0;
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 9;}
+}
+
+// suite à radio.startCad, pour emettre un message (mais pas un ack)
+void lora_on_cad_done(bool channelActivityDetected)
+{
+    event_t evt = { EVENT_CAD_DONE, SOURCE_LORA, channelActivityDetected ? 1 : 0 };
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 10;}
+}
+
+
+void relance_rx(uint8_t actif)
+{
+	g_rx_state = RX_IDLE;
+    event_t evt = { EVENT_RELANCE_RX, 1, actif };
+    xQueueSend(Event_QueueHandle, &evt, 0);
+}
+
+void relance_radio_rx(uint8_t actif)
+{
+    if (g_lora_class == LORA_CLASS_C)
+        Radio.Rx(0);
+    else
+    {
+    	if (actif)
+            Radio.Rx(RX_delai);
+    	else
+    		Radio.Sleep();
+    }
+	nb_messages_envoyes = 0;
 }
 
 void lora_handle_event_tx(void)
@@ -504,21 +797,29 @@ void lora_tx_on_cad_result(bool channelBusy)
 {
     if (g_tx_state == TX_WAIT_CAD) {
         if (channelBusy) {
-            // réessayer plus tard: revenir à IDLE pour redéclencher TX_STEP par l’appli
+            // réessayer plus tard: revenir à WAIT_CAD pour redéclencher TX_STEP par l’appli
             if (++g_cad_fail_count >= 5) {
                 // journaliser réseau occupé après 5 échecs consécutifs
                 log_write('E', log_w_reseau_occupe, 0x00, 0x00, "RadOccup");
                 g_cad_fail_count = 0;
             }
+            lora_etat.channel_busy++;
+            uint32_t delay_ms = 2000 + (rand() % 2000); // entre 2 et 4 secondes
+            lptim2_schedule_ms(delay_ms);
+            relance_rx(1);
+
             //g_tx_state = TX_IDLE;  // reste en TX_WAIT_CAD
         } else {
             g_cad_fail_count = 0; // reset au succès CAD
             g_tx_state = TX_SENDING;
+            lora_tx_state_step();
         }
-        lora_tx_state_step();
     }
     else
+    {
+    	relance_rx(1);
     	LOG_ERROR("cad done inconnu");
+    }
 }
 
 // Point d’entrée depuis EVENT_LORA_RX
@@ -569,171 +870,12 @@ void lora_handle_classb_beacon_event(void)
     Radio.Rx(200);
 }
 
-// =======
-// Bridges
-// =======
-void lora_on_tx_done(void)
-{
-    event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-    g_tx_state = TX_SENT;
-    xQueueSend(Event_QueueHandle, &evt, 0);
-}
-
-void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
-{
-    (void)rssi; (void)snr;
-
-    lora_etat.radio_rx++;
-
-    // Décodage minimal: [dest][reseau][emetteur][param][len][payload]
-    if (size < 5) {
-        relance_rx(1);
-        return;
-    }
-
-    uint8_t dest = payload[0] & 0x7F;
-    if (((dest != My_Address) && (dest != LORA_BROADCAST_ADDR)) || (payload[1] != ReseauAddr)) {
-        relance_rx(1);
-        return;
-    }
-
-    // message reçu pour ce node
-    uint8_t len = payload[4];
-    message_recu.length = payload[4];
-    message_recu.rssi = rssi;
-    message_recu.snr = snr;
-    message_recu.param = payload[3];
-    if (len > MESS_LG_MAX) len = MESS_LG_MAX;
-    uint8_t param = payload[3];
-
-    // Contrainte IRQ: si on est en contexte IRQ, éviter traitement lourd
-    // Heuristique: utiliser l’API FromISR uniquement dans IRQ, sinon traitement direct
-    //BaseType_t inIsr = xPortIsInsideInterrupt();
-    // Détection balise: "BB" au début du payload
-    bool is_beacon = (dest == LORA_BROADCAST_ADDR && len >= 2 && len <= 3 && payload[5] == 'B' && payload[6] == 'B');
-    //if (!inIsr) {
-	if (is_beacon) {
-		// Prochaine balise attendue dans 3 minutes (basé sur LPTIM epoch si dispo)
-		uint32_t now_s = lptim_get_seconds();
-		g_next_beacon_at_ms = (now_s * 1000) + 180000;
-		g_lptim1_10s_since_beacon = 0;
-		// Recalage fin: viser un réveil très proche de la prochaine balise
-		// Marge initiale 10 ms, pourra être ajustée dynamiquement
-		lptim_program_compare_advance_ms(10);
-
-		// Si présence d’une adresse de destinataire immédiat (payload[7])
-		if (len >= 3) {
-			// Si c’est notre adresse, rester en RX continu pour recevoir
-			if (payload[7] == My_Address) {
-				relance_rx(1);
-			}
-		}
-	}
-	else
-	{
-		// Répondre ACK si requis
-		if ((dest != LORA_BROADCAST_ADDR) && ((param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
-			uint8_t ack[6] = { CONCENTRATOR_ADDR, ReseauAddr, My_Address, 0,1,'A' };
-			Radio.Send(ack, 6);
-		}
-
-		// Traitement applicatif standard
-		memcpy(message_recu.data, &payload[5], len);
-		event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
-		xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-
-		uint8_t vide = mess_LORA_dequeue_fictif();  // 0:mess
-		if (param & 1)  // dernier RX
-		{
-			g_tx_state = TX_IDLE;
-			if (!vide)
-			{
-		        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-		        xQueueSend(Event_QueueHandle, &evt, 0);
-			}
-		}
-		else // continue écoute
-			relance_rx(1);
-	}
-
-
-    // Continuer en RX en classe C
-    if (g_lora_class == LORA_CLASS_C) {
-        Radio.Rx(0);
-    } else {
-        Radio.Sleep();
-    }
-}
-
-void lora_on_tx_timeout(void)
-{
-    // Relancer RX et notifier
-	lora_etat.lora_tx_timeout++;
-	g_tx_state = TX_IDLE;
-
-	if (nb_messages_envoyes) nb_messages_envoyes--;
-    event_t evt = { EVENT_ERROR, SOURCE_LORA, nb_messages_envoyes };
-	nb_messages_envoyes = 0;
-    xQueueSend(Event_QueueHandle, &evt, 0);
-}
-
-void lora_on_rx_timeout(void)
-{   // soit on attendait un Ack non reçu, soit on attendait un message non reçu
-	if (g_tx_state == TX_WAIT_ACK)  // Ack non reçu
-	{
-        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-        xQueueSend(Event_QueueHandle, &evt, 0);
-	}
-	else  // pas de message a recevoir => passage en transmission
-	{
-		g_tx_state = TX_IDLE;
-        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-        xQueueSend(Event_QueueHandle, &evt, 0);
-	}
-}
-
-void lora_on_rx_error(void)
-{
-	lora_etat.lora_rx_error++;
-
-    event_t evt = { EVENT_RELANCE_RX, 6, nb_messages_envoyes };
-	nb_messages_envoyes = 0;
-    xQueueSend(Event_QueueHandle, &evt, 0);
-}
-
-void lora_on_cad_done(bool channelActivityDetected)
-{
-    event_t evt = { EVENT_CAD_DONE, SOURCE_LORA, channelActivityDetected ? 1 : 0 };
-    xQueueSend(Event_QueueHandle, &evt, 0);
-}
-
-void relance_rx(uint8_t actif)
-{
-    event_t evt = { EVENT_RELANCE_RX, 1, actif };
-    xQueueSend(Event_QueueHandle, &evt, 0);
-}
-
-void relance_radio_rx(uint8_t actif)
-{
-    if (g_lora_class == LORA_CLASS_C)
-        Radio.Rx(0);
-    else
-    {
-    	if (actif)
-            Radio.Rx(RX_delai);
-    	else
-    		Radio.Sleep();
-    }
-	nb_messages_envoyes = 0;
-
-}
-
-
 // Ajout d’un message LORA dans la queue
 uint8_t mess_LORA_enqueue(out_message_t* mess)
 {
+//LOG_INFO("lg:%i param:%i, head:%i tail:%i", mess->length, mess->param, lora_head, lora_tail);
 
-    if ((mess->length < 5) || (mess->length > MESS_LG_MAX))
+	if ((mess->length < 5) || (mess->length > MESS_LG_MAX))
     {
     	return 1;
     }
@@ -773,7 +915,6 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 		if ((HAL_GetTick() - start_time) > 2000)
 		{
 			//LOG_ERROR("Queue full timeout after %lu ms", 2000);
-		    osMutexRelease(lora_bufferMutex);
 		    log_write('E', log_w_err_uart_bloque, 0x02, 0x03, "uartRxBl");
 		    return 2;  // Timeout
 		}
@@ -798,7 +939,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
     lora_head = head_prov;
 
 	//osDelay(100);
-	LOG_INFO("enqueuelora:head:%d tail:%d mess:%s len:%i", lora_head, lora_tail, mess->data, mess->length);
+	//LOG_INFO("enqueuelora:head:%d tail:%d mess:%s len:%i dest:%c", lora_head, lora_tail, mess->data, mess->length, mess->dest);
     //osDelay(100);
     osMutexRelease(lora_bufferMutex);
 
@@ -815,6 +956,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 // retour : 0:message dispo pour l'envoi, 1:fifo vide, sinon:erreur
 uint8_t mess_LORA_dequeue(out_message_t* mess)
 {
+	//LOG_INFO("dequeue");
 	osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
 	if (status != osOK) return 4;
 
@@ -863,7 +1005,7 @@ uint8_t mess_LORA_dequeue(out_message_t* mess)
 
 		//osDelay(300);
 		//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
-		LOG_INFO("dequeuelora:head:%d tail:%d mess:%s len:%i", lora_head, lora_tail, mess->data, mess->length);
+		//LOG_INFO("dequeuelora:head:%d tail:%d mess:%s len:%i", lora_head, lora_tail, mess->data, mess->length);
 
 		//osDelay(300);
 

@@ -227,11 +227,14 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 		counter++;
 		if (g_tx_state == TX_IDLE) cpt_process_lora_tx = 0;
 		else cpt_process_lora_tx++;
-		if (cpt_process_lora_tx > 10)  // Envoi en cours depuis plus de 100 secondes
+		if (cpt_process_lora_tx > 4)  // Envoi en cours depuis plus de 100 secondes
 		{
+			code_erreur = erreur_TO_LORA_TX;  // 1
+			err_donnee1 = att_cad;
+			err_donnee2 = g_tx_state;
+			lora_etat.tx_trop_long++;
 			g_tx_state = TX_IDLE;
-			code_erreur = erreur_LORA_TX;
-			err_donnee1 = 1;
+			cpt_process_lora_tx = 0;
 
 		}
 		/*event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
@@ -268,6 +271,37 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
     // 10s par réveil LPTIM → incrémenter epoch secondes
     lptim_epoch_s += 10;
     lora_on_lptim1_10s_tick();
+}
+
+// si g_tx_state == RX_RESPONSES => fin statut écoute
+// si g_tx_state == TX_WAIT_CAD => timeout pour relancer test d'envoi
+// si g_tx_state == TX_WAIT_ACK => timeout ack non recu
+void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
+{
+    if (Event_QueueHandle == NULL)  return;
+
+    if (hlptim->Instance == LPTIM2)
+    {
+    	if (g_tx_state == RX_RESPONSES)
+    	{
+    		g_tx_state = TX_IDLE;   // pret à renvoyer des messages
+    		if (mess_LORA_dequeue_fictif()==0)
+    		{
+    			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+    			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+    		}
+    	}
+    	else
+    	{
+			// Décider dynamiquement: si on attend un ACK, lever l'event ACK; sinon TX_STEP
+			// Heuristique simple: on regarde si un TX_WAIT_ACK est probable côté Lora.c via un flag global externe si nécessaire.
+			// Par défaut, lever TX_STEP (l'état décidera).
+			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+    	}
+		__HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
+		__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    }
 }
 
 // Recalage fin des réveils balise: programme le compare pour se réveiller
@@ -1238,18 +1272,3 @@ void lptim2_schedule_ms(uint32_t delay_ms)
     lptim2_program_ticks_and_enable(ticks);
 }
 
-void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
-{
-    if (Event_QueueHandle == NULL)  return;
-
-    if (hlptim->Instance == LPTIM2)
-    {
-        // Décider dynamiquement: si on attend un ACK, lever l'event ACK; sinon TX_STEP
-        // Heuristique simple: on regarde si un TX_WAIT_ACK est probable côté Lora.c via un flag global externe si nécessaire.
-        // Par défaut, lever TX_STEP (l'état décidera).
-        event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
-        xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-        __HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
-        __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
-    }
-}

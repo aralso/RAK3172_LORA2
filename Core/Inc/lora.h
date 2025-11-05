@@ -35,6 +35,7 @@
 
 #define LORA_BROADCAST_ADDR         0x7D
 
+
 // Machine d’états non bloquante pour la phase TX/ACK/RX
 typedef enum {
     TX_IDLE = 0,
@@ -46,6 +47,15 @@ typedef enum {
     RX_RESPONSES
 } lora_tx_state_t;
 
+// Machine d’états non bloquante pour la phase RX
+typedef enum {
+    RX_IDLE = 0,
+	RX_ATTENTE,
+    RX_MESS_RECU,
+    RX_WAIT_ACK_SENT
+} lora_rx_state_t;
+
+
 typedef struct lora_etat_s
 {
 	uint8_t mess_envoy_ok;
@@ -55,6 +65,8 @@ typedef struct lora_etat_s
 	uint8_t mess_recu_ok;
 	uint8_t lora_tx_timeout;
 	uint8_t lora_rx_error;
+	uint8_t channel_busy;
+	uint8_t tx_trop_long;
 } lora_etat_t;
 
 typedef struct radio_TxParam_s
@@ -76,7 +88,10 @@ typedef struct radio_TxParam_s
 	bool iqInverted;
 	uint32_t timeout;
 } radio_TxParam_t;
+
 extern  lora_tx_state_t g_tx_state;
+extern struct lora_etat_s lora_etat;
+extern uint8_t att_cad;
 
 // API de contrôle haute-niveau
 void lora_radio_init(void);

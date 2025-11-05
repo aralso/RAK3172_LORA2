@@ -65,6 +65,7 @@ extern uint8_t param_def;
 #define ISR_callback		   0x27
 #define erreur_mess            0x2F
 #define erreur_LORA_TX		   0x30
+#define erreur_TO_LORA_TX	   0x31
 
 // Code erreur pour log_write :
 #define log_w_err_uart_bloque	0x01
