@@ -92,6 +92,7 @@ extern SUBGHZ_HandleTypeDef hsubghz;
 #define DCDC_ENABLE                 ( 1UL )
 
 /* USER CODE BEGIN EC */
+#define IRQ_RX_DBG ((uint16_t) 0)
 
 /* USER CODE END EC */
 

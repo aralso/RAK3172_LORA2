@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>        // Pour struct tm et mktime
+#include "stm32_timer.h"
 
 // === SYSTÈME DE WATCHDOG ===
 // Tableau de suivi des tâches
@@ -293,14 +294,16 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
     	}
     	else
     	{
-			// Décider dynamiquement: si on attend un ACK, lever l'event ACK; sinon TX_STEP
-			// Heuristique simple: on regarde si un TX_WAIT_ACK est probable côté Lora.c via un flag global externe si nécessaire.
-			// Par défaut, lever TX_STEP (l'état décidera).
 			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
 			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
     	}
 		__HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
 		__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    }
+
+    if (hlptim->Instance == LPTIM3)
+    {
+        UTIL_TIMER_IRQ_Handler();  // Traiter les timers expirés
     }
 }
 
@@ -1257,8 +1260,10 @@ void test_stop_mode(void)
 static void lptim2_program_ticks_and_enable(uint32_t ticks)
 {
     if (ticks == 0) ticks = 1;
+    HAL_LPTIM_Counter_Stop_IT(&hlptim2);
     __HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
     __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    __HAL_LPTIM_RESET_COUNTER(&hlptim2);
     __HAL_LPTIM_COMPARE_SET(&hlptim2, ticks);
     __HAL_LPTIM_ENABLE_IT(&hlptim2, LPTIM_IT_CMPM);
     HAL_LPTIM_Counter_Start_IT(&hlptim2, 0xFFFF);
@@ -1267,8 +1272,8 @@ static void lptim2_program_ticks_and_enable(uint32_t ticks)
 
 void lptim2_schedule_ms(uint32_t delay_ms)
 {
-    const float tick_ms = 1000.0f / 2048.0f;
-    uint32_t ticks = (uint32_t)(delay_ms / tick_ms);
-    lptim2_program_ticks_and_enable(ticks);
+	uint32_t ticks = (delay_ms * 2048) / 1000;
+	if (ticks == 0) ticks = 1;  // Minimum 1 tick
+	lptim2_program_ticks_and_enable(ticks);
 }
 

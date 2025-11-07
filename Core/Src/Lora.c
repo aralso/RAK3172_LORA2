@@ -24,7 +24,7 @@
 
 #define CONCENTRATOR_ADDR           'H'
 
-#define RX_delai	1000
+#define RX_delai	3000
 
 double floor (double);
 struct radio_TxParam_s radio_TxParam;
@@ -238,7 +238,7 @@ void configure_radio_parameters(void)
     Radio.SetChannel(868100000UL);  // 868.1 MHz
 
     // 4. Configuration réception LoRa
-    Radio.SetRxConfig(
+    /*Radio.SetRxConfig(
         MODEM_LORA,           // Modem LoRa
         0,                    // Bandwidth: 125 kHz
         7,                    // Datarate: 7:128
@@ -253,7 +253,31 @@ void configure_radio_parameters(void)
         0,                    // Hop period
         false,                // IQ not inverted
         true                  // Continuous RX
-    );
+    );*/
+
+		radio_RxParam.freq = 868000000;
+		radio_RxParam.channel = 1;
+		radio_RxParam.DR = 0;
+    	radio_RxParam.modem = MODEM_LORA;
+    	radio_RxParam.bandwidth = 0; 		// Bandwidth 0:125k 1:250k 2:500k
+    	radio_RxParam.datarate = 12;		// SF Datarate: 6=64chips, 7=128 chips 12=4096chips
+    	radio_RxParam.coderate = 1;			// Coderate: 1:4/5
+    	radio_RxParam.bandwidthAfc = 0;		// AFC bandwidth (N/A pour LoRa)
+    	radio_RxParam.preambleLen = 8;		// Preamble length
+    	radio_RxParam.symbTimeout = 0;		// Symbol timeout
+    	radio_RxParam.fixLen = 0;			// fixed length 0=variable
+    	radio_RxParam.payloadLen = 0;		// Payload length (0=variable)
+    	radio_RxParam.crcOn = 1;			// 1:CRC enabled
+    	radio_RxParam.freqHopOn = 0;		// Frequency hopping 0:OFF
+    	radio_RxParam.hopPeriod = 0;		// Hop period
+    	radio_RxParam.iqInverted = 0;		// 0:IQ not inverted
+    	radio_RxParam.rxContinuous= 0;		// 1:Continuous RX (symole timeout desactivé)
+
+    	 Radio.SetRxConfig(radio_RxParam.modem, radio_RxParam.bandwidth, radio_RxParam.datarate, \
+    			 radio_RxParam.coderate, radio_RxParam.bandwidthAfc, radio_RxParam.preambleLen, \
+				 radio_RxParam.symbTimeout, radio_RxParam.fixLen, radio_RxParam.payloadLen, \
+				 radio_RxParam.crcOn, radio_RxParam.freqHopOn, radio_RxParam.hopPeriod, \
+				 radio_RxParam.iqInverted, radio_RxParam.rxContinuous);
 
     // SUBGRF_SetStopRxTimerOnPreambleDetect( true );  // ⭐ Ligne 977
     // ⭐ Ligne ~1041 : Configurer timeout absolu à 20ms
@@ -264,7 +288,7 @@ void configure_radio_parameters(void)
     // pas de symbolTimeout
 
     // 5. Configuration transmission LoRa
-    Radio.SetTxConfig(
+    /*Radio.SetTxConfig(
         MODEM_LORA,           // Modem LoRa
         0,                   // Power: 14 dBm
         0,                    // Frequency deviation (N/A pour LoRa)
@@ -278,7 +302,7 @@ void configure_radio_parameters(void)
         0,                    // Hop period
         false,                // IQ not inverted
         3000                  // Timeout: 3 secondes
-    );
+    );*/
 	radio_TxParam.modem = MODEM_LORA;   // 0:FSK  1:LORA
 	radio_TxParam.power = 0;			// en dBm
 	radio_TxParam.fdev = 0;				// 25000 pour FSK
@@ -294,7 +318,12 @@ void configure_radio_parameters(void)
 	radio_TxParam.timeout = 4000;
 	radio_TxParam.freq = 868000000;
 	radio_TxParam.channel = 1;			// channel de 100kHz
-	radio_TxParam.DR = 6	;			// DR 0(SF12) à 7(FSK)
+	radio_TxParam.DR = 0	;			// DR 0(SF12) à DR6(SF7) DR7(FSK)
+
+	Radio.SetTxConfig(radio_TxParam.modem, radio_TxParam.power, radio_TxParam.fdev, radio_TxParam.bandwidth, \
+			radio_TxParam.SF, radio_TxParam.coderate, radio_TxParam.preambleLen, radio_TxParam.fixLen,\
+			radio_TxParam.crcOn, radio_TxParam.freqHopOn, radio_TxParam.hopPeriod, radio_TxParam.iqInverted, \
+			radio_TxParam.timeout);
 
 	// DR0:SF12 BW125   DR1:SF11 BW125   DR5:SF7 BW125   DR6:SF7 BW250    DR7:FSK
     Radio.Sleep();
@@ -392,7 +421,8 @@ void lora_tx_state_step(void)
     LOG_INFO("tx:%i  rx:%i", g_tx_state,  g_rx_state);
 
     switch (g_tx_state) {
-    case TX_IDLE: {
+    case TX_IDLE:
+    case TX_DEBUT: {
         bool msg_loaded = false;
         cpt_renvoi_message=0;
         if (!msg_loaded) {
@@ -408,7 +438,7 @@ void lora_tx_state_step(void)
             		fin_phase_transmission();
             	else  // aucun envoi
             	{
-            		// rien à faire
+            		g_tx_state = TX_IDLE;// rien à faire
             	}
                 break;
             }
@@ -421,6 +451,7 @@ void lora_tx_state_step(void)
     	    uint16_t irqStatus = SUBGRF_GetIrqStatus();
     	    if (irqStatus & (IRQ_PREAMBLE_DETECTED | IRQ_SYNCWORD_VALID | IRQ_HEADER_VALID)) {  // Radio en train de recevoir
     	    	att_cad = 1;
+    	    	LOG_INFO("Wait:message en cours de RX");
   	    		lptim2_schedule_ms(100);  // 100 millisecondes
     	    	break;
     	    }
@@ -429,24 +460,45 @@ void lora_tx_state_step(void)
     	if (status == RF_TX_RUNNING) {
     	    // Radio en train d'émettre, attendre
 	    	att_cad = 2;
+	    	LOG_INFO("Wait:Radio en TX");
     	    lptim2_schedule_ms(100);  // Attendre 100ms
     	    break;
     	}
+    	if (g_rx_state >= RX_MESS_RECU)
+    	{
+	    	att_cad = 5;
+	    	LOG_INFO("Wait:Radio en RX");
+    	    lptim2_schedule_ms(100);  // Attendre 100ms
+    	    break;
+    	}
+    	//LOG_INFO("AAA");
         // verifier si fenetre d'envoi ok
         if (g_lora_class == LORA_CLASS_B) {
             uint32_t elapsed_ms = 0, remaining_ms = 0;
             lora_get_time_since_last_and_to_next(&elapsed_ms, &remaining_ms);
             TimerTime_t need = 0;
+        	//LOG_INFO("BBB");
             need += GetTimeOnAir(radio_TxParam.DR, (uint16_t)(g_tx_msg.length + 5+3+10));  // avec ack et reponse
+        	//LOG_INFO("CCC");
             need += 100; // marge
             if (remaining_ms > 0 && (TimerTime_t)remaining_ms <= need) {
                 uint32_t delay_ms = remaining_ms + 1000; // 1000ms après balise
     	    	att_cad = 3;
+    	    	LOG_INFO("Wait:Balise proche");
                 lptim2_schedule_ms(delay_ms);
                 break;
             }
         }
-        //g_tx_state = TX_SENDING;
+
+        //LOG_INFO("start Cad");
+        SUBGRF_ClearIrqStatus(IRQ_RX_DONE | IRQ_RX_TX_TIMEOUT | IRQ_CRC_ERROR | IRQ_HEADER_ERROR | IRQ_RX_DBG);
+
+           // S'assurer que la radio est bien en STANDBY
+           if (Radio.GetStatus() != RF_IDLE) {
+               Radio.Sleep();  // Force STANDBY
+               // Petit délai pour laisser le temps à la radio de se stabiliser
+               osDelay(10);
+           }
         // vérifier si Canal libre
         Radio.StartCad();
     	att_cad = 4;
@@ -515,12 +567,14 @@ void lora_tx_state_step(void)
     	//verif compteur_envoi avec param
     	cpt_renvoi_message++;
     	//si ok on renvoie le message
-    	uint8_t val = (g_tx_msg.param & 6) > 1;  // bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
+    	uint8_t val = ((g_tx_msg.param & 6) >> 1);  // bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
+    	LOG_INFO("renvoi mess:%i cpt:%i", val, cpt_renvoi_message);
     	if ( ((val==1) && (cpt_renvoi_message<2)) || ((val==2) && (cpt_renvoi_message<5)) )  // bits 1 et 2
 		{
     		// nota : on pourrait ajouter un délai de 3 secondes avec lptim2
     		lora_etat.mess_renvoyes++;
 			g_tx_state = TX_WAIT_CAD;
+    	    //lptim2_schedule_ms(3000);  // Attendre 100ms
 			event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
 			xQueueSend(Event_QueueHandle, &evt, 0);
 		}
@@ -725,13 +779,14 @@ void lora_on_tx_timeout(void)
 {
     // Relancer RX et notifier
 	lora_etat.lora_tx_timeout++;
-	g_tx_state = TX_IDLE;
 
 	if (nb_messages_envoyes) nb_messages_envoyes--;
-    event_t evt = { EVENT_ERROR, SOURCE_LORA, nb_messages_envoyes };
+    event_t evt = { EVENT_ERROR, g_tx_state, nb_messages_envoyes };
+	g_tx_state = TX_IDLE;
 	nb_messages_envoyes = 0;
 	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 6;}
 }
+
 
 // ack non recu, pas de message à recevoir
 void lora_on_rx_timeout(void)
@@ -741,7 +796,7 @@ void lora_on_rx_timeout(void)
         event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
     	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
 	}
-	else  // pas de message a recevoir => passage en transmission
+	else  // pas de message a recevoir => passage en transmission (ou arret si pas de message)
 	{
 		g_tx_state = TX_IDLE;
         event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
@@ -945,10 +1000,13 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 
     if (g_tx_state == TX_IDLE)  // notification d'envoi si pas d'envoi en cours
     {
+    	g_tx_state = TX_DEBUT;
 		event_t evt = { EVENT_LORA_TX, 0, 0 };
 		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
 			{ code_erreur = ISR_callback; 	err_donnee1 = 7; }
     }
+    //else
+    	//LOG_INFO("enqueue:TX deja en cours");
     return 0;
 }
 
@@ -1003,6 +1061,8 @@ uint8_t mess_LORA_dequeue(out_message_t* mess)
 			}
 		lora_tail = tail_prov;
 
+		if (lora_tail == lora_head) // dernier message
+			mess->param = mess->param | 1;
 		//osDelay(300);
 		//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
 		//LOG_INFO("dequeuelora:head:%d tail:%d mess:%s len:%i", lora_head, lora_tail, mess->data, mess->length);

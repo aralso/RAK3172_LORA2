@@ -1228,6 +1228,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  {
                   envoie_mess_ASC(param_def, "AOKK");
 			  }
+			  if ( (message_in[4] =='U')  && (longueur_m==5))  // 1TEU : envoi 2 mess par lora
+			  {
+                  envoie_mess_ASC(param_def, "AOKK");
+                  envoie_mess_ASC(param_def, "ABBB");
+			  }
 			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param xy
 			  {
 				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';

@@ -39,6 +39,7 @@
 // Machine d’états non bloquante pour la phase TX/ACK/RX
 typedef enum {
     TX_IDLE = 0,
+	TX_DEBUT,
     TX_WAIT_CAD,
     TX_SENDING,
 	TX_SENT,
@@ -88,6 +89,28 @@ typedef struct radio_TxParam_s
 	bool iqInverted;
 	uint32_t timeout;
 } radio_TxParam_t;
+
+typedef struct radio_RxParam_s
+{
+	uint32_t freq;
+	uint8_t channel;
+	uint8_t DR;
+	RadioModems_t modem;
+	uint32_t bandwidth;
+	uint32_t datarate;
+	uint8_t coderate;
+	uint32_t bandwidthAfc;
+	uint16_t preambleLen;
+	uint16_t symbTimeout;
+	bool fixLen;
+	uint8_t payloadLen;
+	bool crcOn;
+	bool freqHopOn;
+	uint8_t hopPeriod;
+	bool iqInverted;
+	bool rxContinuous;
+} radio_RxParam_t;
+
 
 extern  lora_tx_state_t g_tx_state;
 extern struct lora_etat_s lora_etat;

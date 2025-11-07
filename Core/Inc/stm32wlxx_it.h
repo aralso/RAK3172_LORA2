@@ -58,6 +58,7 @@ void LPUART1_IRQHandler(void);
 void LPTIM1_IRQHandler(void);
 void LPTIM2_IRQHandler(void);
 void EXTI15_10_IRQHandler(void);
+void LPTIM3_IRQHandler(void);
 void SUBGHZ_Radio_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 

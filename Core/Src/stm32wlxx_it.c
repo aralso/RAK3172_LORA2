@@ -58,6 +58,7 @@
 extern ADC_HandleTypeDef hadc;
 extern LPTIM_HandleTypeDef hlptim1;
 extern LPTIM_HandleTypeDef hlptim2;
+extern LPTIM_HandleTypeDef hlptim3;
 extern UART_HandleTypeDef hlpuart1;
 extern SUBGHZ_HandleTypeDef hsubghz;
 extern TIM_HandleTypeDef htim16;
@@ -246,6 +247,20 @@ void EXTI15_10_IRQHandler(void)
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
 
   /* USER CODE END EXTI15_10_IRQn 1 */
+}
+
+/**
+  * @brief This function handles LPTIM3 Global Interrupt.
+  */
+void LPTIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN LPTIM3_IRQn 0 */
+
+  /* USER CODE END LPTIM3_IRQn 0 */
+  HAL_LPTIM_IRQHandler(&hlptim3);
+  /* USER CODE BEGIN LPTIM3_IRQn 1 */
+
+  /* USER CODE END LPTIM3_IRQn 1 */
 }
 
 /**

@@ -617,6 +617,7 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_LORA_TX_STEP: {
+					LOG_INFO("TX_step");
 					lora_tx_state_step();
 					break;
 				}
@@ -655,7 +656,7 @@ void Appli_Tsk(void *argument)
 
 				case EVENT_ERROR: {
 					relance_radio_rx((uint8_t)evt.data);
-					LOG_ERROR("Error event - data: %d", evt.data);
+					LOG_ERROR("Error event - source:%i data: %d", evt.source, evt.data);
 					// Actions pour erreur
 					break;
 				}

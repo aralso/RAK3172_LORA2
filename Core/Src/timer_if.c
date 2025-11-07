@@ -23,6 +23,8 @@
 #include "timer_if.h"
 
 /* USER CODE BEGIN Includes */
+#include "stm32wlxx_hal.h"
+extern LPTIM_HandleTypeDef hlptim3;
 
 /* USER CODE END Includes */
 
@@ -79,6 +81,7 @@ const UTIL_SYSTIM_Driver_s UTIL_SYSTIMDriver =
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -111,6 +114,31 @@ UTIL_TIMER_Status_t TIMER_IF_StartTimer(uint32_t timeout)
   UTIL_TIMER_Status_t ret = UTIL_TIMER_OK;
   /* USER CODE BEGIN TIMER_IF_StartTimer */
 
+  // timeout en ticks (doit être converti depuis ms)
+  // LPTIM3 est configuré avec LSE/16 = 2048 Hz
+  // 1 tick = 1/2048 s ≈ 0.488 ms
+
+  uint32_t minTimeout = TIMER_IF_GetMinimumTimeout();
+  if (timeout == 0) {
+	  timeout = minTimeout;
+  }
+  if (timeout < minTimeout) {
+      timeout = minTimeout;
+    }
+  // Convertir timeout (en ticks) en valeur de comparaison
+  uint32_t current = HAL_LPTIM_ReadCounter(&hlptim3);
+  uint32_t compare = (current + timeout) & 0xFFFF;  // 16 bits
+
+  __HAL_LPTIM_COMPARE_SET(&hlptim3, compare);
+  __HAL_LPTIM_CLEAR_FLAG(&hlptim3, LPTIM_FLAG_CMPM);
+  __HAL_LPTIM_ENABLE_IT(&hlptim3, LPTIM_IT_CMPM);
+
+  // Démarrer LPTIM3 en mode counter
+  HAL_LPTIM_Counter_Start_IT(&hlptim3, 0xFFFF);
+
+  ret = UTIL_TIMER_OK;
+
+
   /* USER CODE END TIMER_IF_StartTimer */
   return ret;
 }
@@ -119,6 +147,9 @@ UTIL_TIMER_Status_t TIMER_IF_StopTimer(void)
 {
   UTIL_TIMER_Status_t ret = UTIL_TIMER_OK;
   /* USER CODE BEGIN TIMER_IF_StopTimer */
+  __HAL_LPTIM_DISABLE_IT(&hlptim3, LPTIM_IT_CMPM);
+    HAL_LPTIM_Counter_Stop_IT(&hlptim3);
+    ret = UTIL_TIMER_OK;
 
   /* USER CODE END TIMER_IF_StopTimer */
   return ret;
@@ -127,6 +158,7 @@ UTIL_TIMER_Status_t TIMER_IF_StopTimer(void)
 uint32_t TIMER_IF_SetTimerContext(void)
 {
   /* USER CODE BEGIN TIMER_IF_SetTimerContext */
+	RtcTimerContext = HAL_LPTIM_ReadCounter(&hlptim3);
 
   /* USER CODE END TIMER_IF_SetTimerContext */
 
@@ -146,17 +178,25 @@ uint32_t TIMER_IF_GetTimerContext(void)
 
 uint32_t TIMER_IF_GetTimerElapsedTime(void)
 {
-  uint32_t ret = 0;
+  //uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_GetTimerElapsedTime */
-
+  uint32_t now = HAL_LPTIM_ReadCounter(&hlptim3);
+    // Gestion du wrap-around
+    if (now >= RtcTimerContext) {
+      return now - RtcTimerContext;
+    } else {
+      return (0xFFFF - RtcTimerContext) + now + 1;  // 16 bits LPTIM
+    }
   /* USER CODE END TIMER_IF_GetTimerElapsedTime */
-  return ret;
+  //return ret;
 }
 
 uint32_t TIMER_IF_GetTimerValue(void)
 {
   uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_GetTimerValue */
+
+  ret = HAL_LPTIM_ReadCounter(&hlptim3);
 
   /* USER CODE END TIMER_IF_GetTimerValue */
   return ret;
@@ -166,7 +206,7 @@ uint32_t TIMER_IF_GetMinimumTimeout(void)
 {
   uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_GetMinimumTimeout */
-
+ ret = 1;
   /* USER CODE END TIMER_IF_GetMinimumTimeout */
   return ret;
 }
@@ -175,7 +215,7 @@ uint32_t TIMER_IF_Convert_ms2Tick(uint32_t timeMilliSec)
 {
   uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_Convert_ms2Tick */
-
+  ret = (timeMilliSec * 2048) / 1000;
   /* USER CODE END TIMER_IF_Convert_ms2Tick */
   return ret;
 }
@@ -184,7 +224,7 @@ uint32_t TIMER_IF_Convert_Tick2ms(uint32_t tick)
 {
   uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_Convert_Tick2ms */
-
+ ret = (tick * 1000) / 2048;
   /* USER CODE END TIMER_IF_Convert_Tick2ms */
   return ret;
 }
