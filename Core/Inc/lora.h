@@ -29,9 +29,9 @@
 #define ReseauAddr		0x23
 
 // Classes LoRaWAN simplifiées
-#define LORA_CLASS_A                0
+#define LORA_CLASS_A                2
 #define LORA_CLASS_B                1
-#define LORA_CLASS_C                2
+#define LORA_CLASS_C                0
 
 #define LORA_BROADCAST_ADDR         0x7D
 
@@ -69,6 +69,19 @@ typedef struct lora_etat_s
 	uint8_t channel_busy;
 	uint8_t tx_trop_long;
 } lora_etat_t;
+
+typedef struct nodes_s
+{
+	uint8_t adresse;  // 0:pas d'adresse definie
+	uint8_t valid; // etat synchro
+	uint8_t class; // 0pour C, 1 pour B, 2 pour A
+	uint8_t nb_recus;
+	uint8_t nb_envoyes;
+	uint8_t nb_err;
+    int8_t latestRssi;
+
+} nodes_t;
+
 
 typedef struct radio_TxParam_s
 {
@@ -115,11 +128,14 @@ typedef struct radio_RxParam_s
 extern  lora_tx_state_t g_tx_state;
 extern struct lora_etat_s lora_etat;
 extern uint8_t att_cad;
+extern uint8_t g_tx_class, g_tx_dest;
+extern uint8_t nb_nodes;
+extern nodes_t nodes[];
 
 // API de contrôle haute-niveau
 void lora_radio_init(void);
 void lora_set_class(uint8_t lora_class);
-void lora_handle_event_tx(void);
+void lora_handle_event_tx(uint8_t q_id);
 void lora_handle_event_rx(void);
 void lora_tx_state_step(void);
 void lora_schedule_ack_timeout(uint32_t ms);
@@ -127,6 +143,10 @@ void lora_tx_on_cad_result(bool channelBusy);
 void lora_handle_classb_beacon_event(void);
 void relance_radio_rx(uint8_t actif);
 void relance_rx(uint8_t actif);  // envoie vers l'evenement appli
+uint8_t Node_id(uint8_t dest);
+uint8_t ajout_node(uint8_t emetteur);
+void lecture_Nodes(void);
+uint8_t suppression_node(uint8_t node);
 
 // Callbacks Radio → LoRa layer
 void lora_on_tx_done(void);
@@ -172,8 +192,9 @@ void test_radio_write_register(void);
 void SetRadioTxParam (uint8_t param, uint8_t val);
 void PrintRadioTxParam(void);
 uint8_t mess_LORA_enqueue(out_message_t* mess);
-uint8_t mess_LORA_dequeue(out_message_t* mess);
-uint8_t mess_LORA_dequeue_fictif(void);
+uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id);
+uint8_t mess_LORA_dequeue_fictif(uint8_t classe, uint8_t dest);
+uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos, uint16_t size);
 
 // Comptage LPTIM1 et calculs balise
 void lora_on_lptim1_10s_tick(void);

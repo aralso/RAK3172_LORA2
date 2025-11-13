@@ -15,7 +15,8 @@
 #define LOG_MAX_ENTRIES_PER_PAGE (LOG_PAGE_SIZE / LOG_ENTRY_SIZE)
 
 // Adresse de base des pages flash pour les logs
-#define LOG_PAGE_BASE_ADDR      0x0803A000  // Adresse de la première page (Page 126)
+#define LOG_PAGE_BASE_ADDR      0x0803A000  // Adresse de la première page (Page 116)
+// 8e page : 123
 
 // Macro pour calculer l'adresse d'une page
 #define LOG_PAGE_ADDR(page_num) (LOG_PAGE_BASE_ADDR + ((page_num) * LOG_PAGE_SIZE))

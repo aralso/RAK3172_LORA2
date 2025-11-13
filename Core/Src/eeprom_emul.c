@@ -664,8 +664,8 @@ static HAL_StatusTypeDef EEPROM_ErasePage(uint32_t page_addr)
     
     // Calculer le numéro de page
     uint32_t page_number = (page_addr - FLASH_BASE) / FLASH_PAGE_SIZE;
-    LOG_DEBUG("Page calc: %lu", page_number);
-    LOG_INFO("Page: %lu", page_number);
+    //LOG_DEBUG("Page calc: %lu", page_number);
+    //LOG_INFO("Page: %lu", page_number);
     
     // Vérifier que la page est dans la plage valide
     if (page_number >= 128) {  // 256 KB / 2 KB = 128 pages
@@ -675,7 +675,7 @@ static HAL_StatusTypeDef EEPROM_ErasePage(uint32_t page_addr)
     
     // Vérifier l'état de la flash avant effacement
     uint32_t *flash_ptr = (uint32_t*)page_addr;
-    LOG_INFO("Flash before: 0x%08lX 0x%08lX", flash_ptr[0], flash_ptr[1]);
+    //LOG_INFO("Flash before: 0x%08lX 0x%08lX", flash_ptr[0], flash_ptr[1]);
     
     // Désactiver les interruptions
     __disable_irq();
@@ -694,7 +694,7 @@ static HAL_StatusTypeDef EEPROM_ErasePage(uint32_t page_addr)
     erase_init.Page = page_number;
     erase_init.NbPages = 1;
     
-    LOG_DEBUG("Erase page: %lu", erase_init.Page);
+    //LOG_DEBUG("Erase page: %lu", erase_init.Page);
     
     uint32_t page_error;
     HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&erase_init, &page_error);

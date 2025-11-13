@@ -10,6 +10,7 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
+ v1.9 11/2025 : process LORA RX-TX
  v1.8 10/2025 : envoi subghz ok
  v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
@@ -59,6 +60,9 @@ uint8_t test_val=0;
 uint32_t last_status_time = 0;
 uint32_t last_save_time = 0;
 
+uint8_t cpt_timer20s;
+uint8_t cpt_message;
+uint8_t mess_pay[100];
 
 /* Definitions for LORA_RX_Task */
 osThreadId_t LORA_RX_TaskHandle;
@@ -613,7 +617,7 @@ void Appli_Tsk(void *argument)
 				}
 				case EVENT_LORA_TX: {
 					LOG_INFO("Debut de transmission LORA");
-					lora_handle_event_tx();
+					lora_handle_event_tx(evt.source);
 					break;
 				}
 				case EVENT_LORA_TX_STEP: {
@@ -622,12 +626,23 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_LORA_RX: {
-					LOG_INFO("message LORA reçu len:%i rssi:%i snr:%i mess:%s", evt.data, message_recu.rssi, \
-							message_recu.snr, message_recu.data);
+					LOG_INFO("message LORA recu len:%i rssi:%i snr:%i param:%02X mess:%s", evt.data, message_recu.rssi, \
+							message_recu.snr, message_recu.param, message_recu.data);
+					if (evt.data) evt.data--;
 					traitement_rx(message_recu.data, evt.data);
 					//lora_handle_event_rx();
 					break;
 				}
+				case EVENT_LORA_RX_TEST: {
+					for (int j = 0; j < evt.data; j++) {
+						LOG_DEBUG("%02X ", mess_pay[j]);
+						// H23U 11 07 HUTTT10
+					}
+					break;
+				}
+
+
+
 				case EVENT_LORA_ACK_TIMEOUT: {
 					// Timeout ACK → retry ou passage à l’état suivant
 					lora_tx_state_step();
@@ -723,6 +738,16 @@ void Appli_Tsk(void *argument)
 					//LOG_INFO("a");
 					LOG_INFO("timer 20s");
 
+					cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
+					if ((cpt_timer20s==1) || ((cpt_timer20s%2) == 0))
+					{
+						cpt_message++;
+						param_def=0x10; // 0x10 sans ack
+						if (cpt_message==2) param_def = 0;  // 0:avec ack, sans renvoi
+						if (cpt_message==3) param_def = 2;  // 2:avec ack, 2 renvois
+						if (cpt_message==4) param_def = 0x30;  // 0x30:sans ack, RX apres
+						envoie_mess_ASC(param_def, "HTTT%i", cpt_message);
+					}
 					//LOG_INFO("Entrée en mode Stop avec HSI...");
 					/*char init_msg[] = "mode stop\n\r";
 					  uint16_t len = strlen(init_msg);

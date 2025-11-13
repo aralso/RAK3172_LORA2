@@ -24,10 +24,10 @@
 #define EEPROM_MAX_RECORDS_32     ((EEPROM_PAGE_SIZE - EEPROM_HEADER_SIZE) / EEPROM_RECORD_SIZE_32)
 
 // Adresses des pages flash
-#define EEPROM_PAGE_0_ADDR        0x08038000  // Page  (début)   Max: 803FFFF
-//#define EEPROM_PAGE_1_ADDR        0x08038800  // Page
-//#define EEPROM_PAGE_2_ADDR        0x08039000  // Page
-//#define EEPROM_PAGE_3_ADDR        0x08039800  // Page
+#define EEPROM_PAGE_0_ADDR        0x08038000  // Page  112(début)   Max: 803FFFF
+//#define EEPROM_PAGE_1_ADDR        0x08038800  // Page 113
+//#define EEPROM_PAGE_2_ADDR        0x08039000  // Page 114
+//#define EEPROM_PAGE_3_ADDR        0x08039800  // Page 115
 
 // États des pages
 typedef enum {

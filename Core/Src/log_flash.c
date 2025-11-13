@@ -571,8 +571,8 @@ static HAL_StatusTypeDef log_write_entry_to_page(uint32_t entry_addr, const LogE
         return HAL_ERROR;
     }
 
-    LOG_INFO("log entry adr:%08X", entry_addr);
-    osDelay(400);
+    //LOG_INFO("log entry adr:%08X", entry_addr);
+    //osDelay(400);
     
     // Désactiver les interruptions
     __disable_irq();

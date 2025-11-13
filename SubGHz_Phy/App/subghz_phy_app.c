@@ -140,7 +140,7 @@ void SubghzApp_Init(void)
 
   uint8_t radio_status;
   if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
-	  LOG_INFO("Radio status apres init : 0x%02X", radio_status);
+	  //LOG_INFO("Radio status apres init : 0x%02X", radio_status);
 
 	  /*if (radio_status == 0x00) {
 		  LOG_ERROR("❌ Radio inactif - Réveil nécessaire");

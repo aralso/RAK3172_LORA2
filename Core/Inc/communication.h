@@ -17,8 +17,6 @@
 #include "timers.h"
 #include "queue.h"
 
-#define END_NODE
-#define My_Address 'U'
 
 #define dest_erreur	'1'
 #define dest_log '1'
@@ -66,10 +64,14 @@ extern uint8_t param_def;
 #define erreur_mess            0x2F
 #define erreur_LORA_TX		   0x30
 #define erreur_TO_LORA_TX	   0x31
+#define erreur_nb_nodes_max	   0x32
+#define depass_q_id 		   0x33
+
 
 // Code erreur pour log_write :
 #define log_w_err_uart_bloque	0x01
 #define log_w_reseau_occupe		0x02
+#define tx_lora_node_non_identifie	0x03
 
 #define UART_SEND(msg) do { \
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
@@ -99,9 +101,9 @@ typedef struct {
 
 typedef struct {
     uint8_t length;          // Longueur du message (champs data)
-    uint8_t type;            // Type : 0=ASCII, 1=Binaire
     uint8_t dest;          // dest
-    uint8_t param; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)   bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
+    uint8_t type;            // Type : 0=ASCII, 1=Binaire
+    uint8_t param; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)   bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6-7:classe
     uint8_t data[MESS_LG_MAX];        // Données du message
 } out_message_t;
 

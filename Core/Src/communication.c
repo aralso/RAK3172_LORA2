@@ -19,12 +19,18 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-
-#define nb_ligne_routage 2  //  0->Loop  1->Uart   Add+1->Uart
-uint8_t table_routage[nb_ligne_routage][6] = {
-    {'1', '1', 3, 0, 0, 0},
-    {'2', 'z', 7, 'H', 0, 0}
-};
+#ifdef END_NODE
+	#define nb_ligne_routage 2  //  0->Loop  1->Uart   Add+1->Uart
+	uint8_t table_routage[nb_ligne_routage][6] = {
+		{'1', '1', 3, 0, 0, 0},
+		{'2', 'z', 7, 'H', 0, 0}
+	};
+#else
+	#define nb_ligne_routage 4  // 1-> liaison série du a
+	uint8_t table_routage[nb_ligne_routage][6] = {  // Uart:1, AàG  RF:Iàz
+			{'1', '1', 3, 0, 0, 0}, {'a','z',6,0,0},
+			{'I','Z',6,0}, {'A','G',3,0,0,0} };  // Passerelle RF (Q)
+#endif
 
 uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
               // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
@@ -103,8 +109,8 @@ static uint8_t current_log_level = CURRENT_LOG_LEVEL;
 in_message_t message_recu;
 
 static uint8_t mess_buffer[MESS_BUFFER_SIZE];
-static uint16_t head = 0;
-static uint16_t tail = 0;
+static uint16_t uart_head = 0;
+static uint16_t uart_tail = 0;
 
 static osMutexId_t bufferMutex;
 
@@ -532,13 +538,27 @@ uint8_t envoie_mess_ASC(uint8_t param, const char* format, ...)
 		return 2; // Erreur : dépassement de buffer ou trop court
 	}
 
+    /*char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+    char *p = hex_str;
+
+    for (uint8_t i = 0; i < len_ASC+2; i++) {
+        p += sprintf(p, "%02X ", form_buf.data[i]);  // Espace entre chaque octet
+    }
+    LOG_INFO("envoie:lg:%i %s", len_ASC, hex_str);*/
+
 	// décaler form_buf
-	memmove(&form_buf.data[1], &form_buf.data[0], len_ASC);
+	memmove(&form_buf.data[1], &form_buf.data[0], len_ASC+1);
 	//memcpy(mess.data+1, form_buf, len_ASC + 1); // decalage & +1 pour inclure le '\0'
 	len_ASC += 2;
 	form_buf.data[0] = form_buf.data[1];
 	form_buf.data[1] = My_Address;
 
+    /*char hex_str2[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+    char *p2 = hex_str2;
+    for (uint8_t i = 0; i < len_ASC+2; i++) {
+        p2 += sprintf(p2, "%02X ", form_buf.data[i]);  // Espace entre chaque octet
+    }
+    LOG_INFO("envoie:l2:%i %s", len_ASC, hex_str2);*/
 
 	// Envoyer le message
 	form_buf.length = len_ASC;
@@ -546,6 +566,9 @@ uint8_t envoie_mess_ASC(uint8_t param, const char* format, ...)
 	form_buf.type = 0;  // ascii
 	form_buf.param = param;
 	uint8_t res = envoie_routage(&form_buf);
+
+	if (res)
+		LOG_INFO("err envoi mess ASCII: code:%i lg:%i mess:%s", res, len_ASC, form_buf.data);
 	//osDelay(100);
 	//LOG_INFO("enqueue:%i %s", len, mess);
     //osDelay(100);
@@ -621,7 +644,7 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	  }
 	  if (j)
 	  {
-		  LOG_INFO("AD j:%i", j);
+		  //LOG_INFO("AD j:%i", j);
 
 		   if (j==3)
 			   retc = mess_enqueue(mess);
@@ -664,18 +687,18 @@ uint8_t mess_enqueue(out_message_t* mess)
 
     uint16_t total_size = mess->length+4;
 
-    if (head >= MESS_BUFFER_SIZE) {
-            head = 0; // Reset si corruption
-            tail = 0;
+    if (uart_head >= MESS_BUFFER_SIZE) {
+            uart_head = 0; // Reset si corruption
+            uart_tail = 0;
     }
     uint32_t start_time = HAL_GetTick();
 
     uint16_t free_space;
 
-    if (head >= tail)
-        free_space = MESS_BUFFER_SIZE - (head - tail) - 1;
+    if (uart_head >= uart_tail)
+        free_space = MESS_BUFFER_SIZE - (uart_head - uart_tail) - 1;
     else
-        free_space = (tail - head) - 1;
+        free_space = (uart_tail - uart_head) - 1;
 
 	 while (free_space < (uint16_t)(total_size + 10))
 	 {
@@ -685,16 +708,16 @@ uint8_t mess_enqueue(out_message_t* mess)
 		    log_write('E', log_w_err_uart_bloque, 0x02, 0x03, "uartRxBl");
 		    return 2;  // Timeout
 		}
-	    if (head >= tail)
-	        free_space = MESS_BUFFER_SIZE - (head - tail) - 1;
+	    if (uart_head >= uart_tail)
+	        free_space = MESS_BUFFER_SIZE - (uart_head - uart_tail) - 1;
 	    else
-	        free_space = (tail - head) - 1;
+	        free_space = (uart_tail - uart_head) - 1;
 	 }
 
 	osStatus_t status = osMutexAcquire(bufferMutex, 5000);
 	if (status != osOK) return 3;
 
-    uint16_t head_prov = head;
+    uint16_t head_prov = uart_head;
 
     uint8_t* mess_ptr = (uint8_t*)mess;
         for (uint16_t i = 0; i < total_size; i++) {
@@ -702,7 +725,7 @@ uint8_t mess_enqueue(out_message_t* mess)
             head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
         }
 
-    head = head_prov;
+        uart_head = head_prov;
 
     osMutexRelease(bufferMutex);
     xTaskNotifyGive(Uart_TX_TaskHandle); // Notifier la tache UArt_TX
@@ -715,15 +738,15 @@ uint8_t mess_dequeue(out_message_t* mess)
 	osStatus_t status = osMutexAcquire(bufferMutex, 10000);
 	if (status != osOK) return 4;
 
-	uint16_t tail_prov=tail;
+	uint16_t tail_prov=uart_tail;
 
-    if (head == tail) {
+    if (uart_head == uart_tail) {
         osMutexRelease(bufferMutex);
         return 1; // FIFO vide
     }
 
 
-    uint16_t size = mess_buffer[tail];
+    uint16_t size = mess_buffer[uart_tail];
 
 	//osDelay(300);
 	//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
@@ -732,20 +755,20 @@ uint8_t mess_dequeue(out_message_t* mess)
     // Vérif longueur valide
 	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
 	{
-		head=0;
-		tail=0;
+		uart_head=0;
+		uart_tail=0;
 		osMutexRelease(bufferMutex);
 		return 2; // corruption détectée
 	}
 
 	// Vérif que les données tiennent dans la FIFO actuelle
-	uint16_t available = (head >= tail_prov) ?
-						 (head - tail_prov) :
-						 (MESS_BUFFER_SIZE - (tail_prov - head));
+	uint16_t available = (uart_head >= tail_prov) ?
+						 (uart_head - tail_prov) :
+						 (MESS_BUFFER_SIZE - (tail_prov - uart_head));
 
 	if (available < size) {
-		head=0;
-		tail=0;
+		uart_head=0;
+		uart_tail=0;
 		osMutexRelease(bufferMutex);
 		return 3; // corruption : message incomplet
 	}
@@ -755,7 +778,7 @@ uint8_t mess_dequeue(out_message_t* mess)
             mess_ptr[i] = mess_buffer[tail_prov];
             tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
         }
-    tail = tail_prov;
+    uart_tail = tail_prov;
 	//osDelay(300);
 	//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
     //osDelay(300);
@@ -1139,6 +1162,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             	  memcpy(message.data, (uint8_t[]){'1', 1, 'O', 'K'}, 4);
                   envoie_mess_bin(&message);
               }
+              if ( (message_in[4] =='N') && (message_in[5] =='E') && (longueur_m==6))  // SLNE  Lecture Nodes
+  				      lecture_Nodes();
+              if ( (message_in[4] =='N') && (message_in[5] =='S') && (longueur_m==7))  // SLNSx  suppression Node x
+  				      suppression_node(message_in[6]-'0');
+
               if ( (message_in[4] =='T') && (message_in[5] =='a') && (longueur_m==6))  // SLTa  Stack des taches
   				 check_stack_usage();
 
@@ -1213,8 +1241,27 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                   LOG_INFO("etat LORA Rx: ok:%i radio:%i error:%i", \
                 		  lora_etat.mess_recu_ok, lora_etat.radio_rx, lora_etat.lora_rx_error);
               }
+              if ( (message_in[4] =='R') && (message_in[5] =='N') && (longueur_m==6))  // SLRN  Etat Nodes
+              {
+            	  for (uint8_t i=0; i<nb_nodes; i++)
+            	  {
+                  LOG_INFO("Nodes %i add:%i val:%i class:%i recu:%i envoi:%i, err:%i rssi:%i", \
+                		  nodes[i].adresse, nodes[i].valid, nodes[i].class, nodes[i].nb_recus, \
+						  nodes[i].nb_envoyes, nodes[i].nb_err, nodes[i].latestRssi);
+            	  }
+              }
           }
-          if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Test eeprom/log_flash
+
+          if ((message_in[2] == 'T') && (message_in[3] == 'T'))  // Tests
+          {
+			  if ( (message_in[4] =='T')  && (longueur_m==6))  // 1TTTx : mess recu
+			  {
+				  param_def = 0x10; // 10:pas d'ack, pas de rx apres
+				  LOG_INFO("envoi UTES");
+                  envoie_mess_ASC(param_def, "UTES");
+			  }
+          }
+          if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Tests
           {
 			  if ( (message_in[4] =='E')  && (longueur_m==7))  // Ecriture eeprom  1TEE12
 			  {
@@ -1226,7 +1273,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  }
 			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora
 			  {
-                  envoie_mess_ASC(param_def, "AOKK");
+                  envoie_mess_ASC(param_def, "HTL1");
 			  }
 			  if ( (message_in[4] =='U')  && (longueur_m==5))  // 1TEU : envoi 2 mess par lora
 			  {
@@ -1264,6 +1311,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			     LOG_INFO("Logs lus: %i", logs_read);
 		      }
           }
+          if ((message_in[2] == 'T') && (message_in[3] == 'L'))  // Tests
+          {
+		      if ( (message_in[4] =='1'))  // LEcture TL1
+		      {
+			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
+		      }
+          }
+
           if ((message_in[2] == 'H'))
           {
           	if (message_in[3] == 'E')  // HEHhhmmss : Ecriture heure

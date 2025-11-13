@@ -131,7 +131,7 @@ void init_functions4(void)
      else
         LOG_ERROR("Erreur LOG");*/
 
-	EEPROM_Init();
+	EEPROM_Init(); // TODO a remettre
     /*if (EEPROM_Init() == HAL_OK)
             LOG_INFO("EEPROM initialisee");
          else
@@ -286,7 +286,7 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
     	if (g_tx_state == RX_RESPONSES)
     	{
     		g_tx_state = TX_IDLE;   // pret à renvoyer des messages
-    		if (mess_LORA_dequeue_fictif()==0)
+    		if (mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest)==0)
     		{
     			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
     			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
