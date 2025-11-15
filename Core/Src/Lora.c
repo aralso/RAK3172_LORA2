@@ -33,6 +33,8 @@ uint8_t frame_tx[3 + 2 + MESS_LG_MAX];
 uint8_t cpt_process_lora_tx = 0;
 struct lora_etat_s lora_etat;
 
+uint8_t test1;
+
 lora_tx_state_t g_tx_state = TX_IDLE;
 uint8_t g_tx_class = 0;
 uint8_t g_tx_dest;
@@ -347,7 +349,39 @@ void configure_radio_parameters(void)
 	// DR0:SF12 BW125   DR1:SF11 BW125   DR5:SF7 BW125   DR6:SF7 BW250    DR7:FSK
     Radio.Sleep();
 
-    LOG_INFO("Radio LoRa configuree: 868 MHz, SF7, 0 dBm");
+    LOG_INFO("Radio LoRa configuree: %i MHz ch:%i SF%i %i dBm", radio_TxParam.freq / 1000000, radio_TxParam.channel, radio_TxParam.SF, radio_TxParam.power);
+
+	#ifdef END_NODE
+		nodes[0].adresse = ID_CONCENTRATOR;
+		nodes[0].valid = 1;
+		nodes[0].class = 0;
+		nodes[0].nb_recus = 0;
+		nodes[0].nb_envoyes = 0;
+		nodes[0].nb_err = 0;
+		nodes[0].latestRssi = 0;
+		nb_nodes=1;
+	#endif
+
+	// création de nodes fictifs
+	#ifndef END_NODE
+		nodes[0].adresse = 'T';
+		nodes[0].valid = 1;
+		nodes[0].class = 2;
+		nodes[0].nb_recus = 0;
+		nodes[0].nb_envoyes = 0;
+		nodes[0].nb_err = 0;
+		nodes[0].latestRssi = 0;
+		nb_nodes=1;
+
+		nodes[1].adresse = 'V';
+		nodes[1].valid = 1;
+		nodes[1].class = 0;
+		nodes[1].nb_recus = 0;
+		nodes[1].nb_envoyes = 0;
+		nodes[1].nb_err = 0;
+		nodes[1].latestRssi = 0;
+		nb_nodes=2;
+	#endif
 }
 
 void PrintRadioTxParam(void)
@@ -437,7 +471,8 @@ void lora_set_class(uint8_t lora_class)
 
 void lora_tx_state_step(void)
 {
-    LOG_INFO("tx:%i  rx:%i q_id:%i", g_tx_state,  g_rx_state, g_tx_class);
+    LOG_INFO("tx:%i  rx:%i q_id:%i T1:%i", g_tx_state,  g_rx_state, g_tx_class, test1);
+    test1=0;
 
     switch (g_tx_state) {
     case TX_IDLE:
@@ -445,15 +480,17 @@ void lora_tx_state_step(void)
         bool msg_loaded = false;
         cpt_renvoi_message=0;
         if (!msg_loaded) {
-            if (mess_LORA_dequeue(&g_tx_msg, g_tx_class) == 0) {
+        	uint8_t ret = mess_LORA_dequeue(&g_tx_msg, g_tx_class, g_tx_dest);
+            if (ret == 0)
+            {
+                g_tx_msg.param = g_tx_msg.param | (CLASS<<6);
 
-                char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
-                char *p = hex_str;
-
-                for (uint8_t i = 0; i < g_tx_msg.length; i++) {
+                //char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+                //char *p = hex_str;
+                /*for (uint8_t i = 0; i < g_tx_msg.length; i++) {
                     p += sprintf(p, "%02X ", g_tx_msg.data[i]);  // Espace entre chaque octet
                 }
-                LOG_INFO("tx: dest:%c lg:%i %02X %s", g_tx_msg.dest, g_tx_msg.length, g_tx_msg.param, hex_str);
+                LOG_INFO("tx: dest:%c lg:%i p:%02X %s", g_tx_msg.dest, g_tx_msg.length, g_tx_msg.param, hex_str);*/
 
             	msg_loaded = true;
                 nb_messages_envoyes ++;
@@ -462,6 +499,7 @@ void lora_tx_state_step(void)
             }
             else // pas/plus de message dans pile d'envoi
             {
+            	//LOG_INFO("dequeue ret:%i", ret);
             	if (nb_messages_envoyes) // au moins 1 mess envoyé
             		fin_phase_transmission();
             	else  // aucun envoi
@@ -544,7 +582,7 @@ void lora_tx_state_step(void)
         for (uint8_t i = 0; i < tx.len && i < sizeof(tx.payload); i++) {
             p += sprintf(p, "%02X ", tx.payload[i]);  // Espace entre chaque octet
         }
-        LOG_INFO("tx: dest:%c lg:%i %02X %s", tx.destAddr, tx.len, tx.param, hex_str);
+        LOG_INFO("tx: dest:%c lg:%i p:%02X %s", tx.destAddr, tx.len, tx.param, hex_str);
         lora_send_packet(&tx);
         break;
     }
@@ -553,6 +591,9 @@ void lora_tx_state_step(void)
         if (g_tx_msg.param & 0x10)  // Ack non requis
         {  // succes d'envoi
         	lora_etat.mess_envoy_ok++;
+        	uint8_t node_id = Node_id(g_tx_dest);
+        	if (node_id)  nodes[node_id-1].nb_envoyes++;
+
             if (g_tx_msg.param & 0x1)  // dernier message
             {
             	// fin phase transmission , début phase réception
@@ -576,7 +617,10 @@ void lora_tx_state_step(void)
         break; }
     case TX_ACK_RECU: { // success avec ack
     	lora_etat.mess_envoy_ok++;
-        if (g_tx_msg.param & 0x1)  // dernier message
+    	uint8_t node_id = Node_id(g_tx_dest);
+    	if (node_id)  nodes[node_id-1].nb_envoyes++;
+
+    	if (g_tx_msg.param & 0x1)  // dernier message
         {
         	// fin phase transmission , début phase réception
     		fin_phase_transmission();
@@ -610,6 +654,8 @@ void lora_tx_state_step(void)
     	{
     		// supression message
     		lora_etat.mess_envoy_supp++;
+        	uint8_t node_id = Node_id(g_tx_dest);
+        	if (node_id)  nodes[node_id-1].nb_err++;
         	// fin phase transmission , début phase réception
     		fin_phase_transmission();
     	}
@@ -662,6 +708,7 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 
 	if (g_rx_state == RX_WAIT_ACK_SENT)
 	{
+		test1=1;
 		relance_radio_rx(1);
 		if (mess_rx_dernier)  // dernier RX
 		{
@@ -674,7 +721,10 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 			}
 		}
 		else
+		{
 			g_rx_state = RX_ATTENTE;  // attend message suivant
+            lptim2_schedule_ms(RX_delai);
+		}
 		mess_rx_dernier=0;
 	}
 	else if (g_tx_state == TX_SENDING)
@@ -745,6 +795,7 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 		{
 			// Si c’est notre adresse, revient en RX continu pour recevoir le message
 			g_rx_state = RX_ATTENTE; // attend message
+            lptim2_schedule_ms(RX_delai);
 			relance_radio_rx(1);
 		}
 		else
@@ -768,6 +819,7 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 					{
 						nodes[node_id].class = message_recu.param >>6;
 						if (nodes[node_id].class > 2) nodes[node_id].class=0;
+						node_id++;
 					}
 				}
 			}
@@ -802,7 +854,7 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 			uint8_t ack=0;
 			if ((dest != LORA_BROADCAST_ADDR) && ((message_recu.param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
 				ack=1;
-				uint8_t ack[7] = { payload[2], ReseauAddr, My_Address, 0,2,'A', 'C' };
+				uint8_t ack[7] = { payload[2], ReseauAddr, My_Address, CLASS<<6,2,'A', 'C' };
 				mess_rx_dernier = message_recu.param & 1;
 				g_rx_state = RX_WAIT_ACK_SENT;
 				Radio.Send(ack, 7);
@@ -811,7 +863,10 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 			{
 				if (message_recu.param & 1)  // dernier RX
 					g_rx_state = RX_IDLE;
-				else g_rx_state = RX_ATTENTE;  // attend message rx suivant
+				else {
+					g_rx_state = RX_ATTENTE;  // attend message rx suivant
+		            lptim2_schedule_ms(RX_delai);
+				}
 				relance_radio_rx(1);
 			}
 
@@ -1014,6 +1069,7 @@ uint8_t ajout_node(uint8_t emetteur)
 
 uint8_t suppression_node(uint8_t node)
 {
+#ifndef END_NODE
 	uint8_t node_id = Node_id(node);
 	if (!node_id)
 		return 2;  // node n'existe pas
@@ -1049,6 +1105,7 @@ uint8_t suppression_node(uint8_t node)
 	}
 
 	LOG_INFO("Node %c-%i supprimé, %i messages supprimés, nb_nodes=%i", node, node_id, nb_mess_supp, nb_nodes);
+#endif
 	return 0;  // Succès
 }
 
@@ -1173,13 +1230,15 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 
     uint16_t head_prov = lora_head[q_id];
 
-    uint8_t* mess_ptr = (uint8_t*)mess;
+	LOG_INFO("enqueue : size:%i pos:%i", total_size, head_prov);
+
+	uint8_t* mess_ptr = (uint8_t*)mess;
         for (uint16_t i = 0; i < total_size; i++) {
             lora_buff[head_prov][q_id] = mess_ptr[i];
             //LOG_INFO("dequeue: %02X", mess_ptr[i]);
             head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
         }
-    //LOG_INFO("total size: %i", total_size);
+
 
     /*char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
     char *p = hex_str;
@@ -1210,152 +1269,155 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 }
 
 // Extraction d’un message LORA de la queue
-// retour : 0:message dispo pour l'envoi, 1:fifo vide, sinon:erreur
-uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id)
+// return 0:au moins 1 message     2-3:erreur  5:queue vide 6:dest inconnu
+uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id, uint8_t dest)
 {
-	//LOG_INFO("dequeue");
+	//LOG_INFO("dequeue dest:%c queue:%i", dest, q_id);
+	//osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
+	//if (status != osOK) return 4;
+
+	uint8_t node_id = Node_id(dest);
+	if(!node_id)
+		return 6;  // node pas trouvé
+	else
+	{
+		node_id--;
+		if (q_id != nodes[node_id].class)
+			return 7; // la queue ne correspond pas au dest
+	}
+
+	uint16_t pos;
+	uint8_t ret = mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
+
+	if (ret)
+		return ret; // pas de correspondance
+	else
+	{
+		uint8_t size = lora_buff[pos][q_id];  // 1er octet
+		LOG_INFO("dequeue : size:%i pos:%i", size, pos);
+		uint16_t tail_prov = pos;
+		uint8_t* mess_ptr = (uint8_t*)mess;
+
+		// copie du message (avec en-tete) dans la structure
+		for (uint8_t i = 0; i < size+4; i++) {
+			mess_ptr[i] = lora_buff[tail_prov][q_id];
+			tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+		}
+
+		//suppression du message
+		mess_LORA_suppression_milieu ( q_id, pos, lora_buff[pos][q_id]);
+
+		// recherche s'il y a un autre message pour le meme dest
+		uint8_t der = mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
+		LOG_INFO("cherche der: node_id:%i der:%i pos:%i", node_id, der, pos);
+		if (der) mess->param = mess->param | 1;  // dernier
+
+		//osMutexRelease(lora_bufferMutex);
+		return 0; //ok
+	}
+}
+
+// return 0:au moins 1 message     2-3:erreur  5:queue vide 6:dest inconnu
+uint8_t mess_LORA_dequeue_fictif(uint8_t q_id, uint8_t dest)
+{
+
+    if (lora_head[q_id] == lora_tail[q_id]) {
+        return 5; // FIFO vide
+    }
+
+	uint8_t node_id = Node_id(dest);
+	if(!node_id)
+		return 6;  // node pas trouvé
+	else
+	{
+		node_id--;
+		q_id = nodes[node_id].class;
+		if (q_id > 2) {
+			code_erreur = depass_q_id;
+			err_donnee1 = 1;
+			q_id=0;
+			nodes[node_id].class = 0;
+		}
+	}
+
+	uint16_t pos;
+	return mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
+}
+
+// return : 0:trouvé, 1:vide, 2-3-4:erreur
+uint8_t mess_lora_dequeue_premier(out_message_t* mess, uint8_t q_id )
+{
+
+	if (lora_head[q_id] == lora_tail[q_id])
+		return 1;
+
 	osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
-	if (status != osOK) return 4;
+	if (status != osOK) return 3;
 
 	uint16_t tail_prov = lora_tail[q_id];
 
-    if (lora_head[q_id] == lora_tail[q_id]) {
-        osMutexRelease(lora_bufferMutex);
-        return 1; // FIFO vide
-    }
-
-    uint16_t size = lora_buff[lora_tail[q_id]][q_id];
-
-
-	//osDelay(300);
-	//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
-    //osDelay(300);
-
-    // Vérif longueur valide
+	uint8_t size = lora_buff[tail_prov][q_id];  // 1er octet
+	// Vérif longueur valide
 	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
 	{
-		lora_head[q_id]=0;
-		lora_tail[q_id]=0;
+		lora_head[q_id] = 0;
+		lora_tail[q_id] = 0;
 		osMutexRelease(lora_bufferMutex);
 		return 2; // corruption détectée
 	}
-
 	// Vérif que les données tiennent dans la FIFO actuelle
 	uint16_t available = (lora_head[q_id] >= tail_prov) ?
 						 (lora_head[q_id] - tail_prov) :
 						 (MESS_BUFFER_SIZE - (tail_prov - lora_head[q_id]));
 
-	if (available < size) {
-		lora_head[q_id]=0;
-		lora_tail[q_id]=0;
+	if (available < size+4) {
+		lora_head[q_id] = 0;
+		lora_tail[q_id] = 0;
 		osMutexRelease(lora_bufferMutex);
 		return 3; // corruption : message incomplet
 	}
+	uint8_t* mess_ptr = (uint8_t*)mess;
 
-    //LOG_INFO("dequeue size: %i", size);
+	// copie du message (avec en-tete) dans la structure
+	for (uint8_t i = 0; i < size+4; i++) {
+		mess_ptr[i] = lora_buff[tail_prov][q_id];
+		tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+	}
 
-		uint8_t* mess_ptr = (uint8_t*)mess;
-			for (uint16_t i = 0; i < size+4; i++) {
-				mess_ptr[i] = lora_buff[tail_prov][q_id];
-	            //LOG_INFO("dequeue: %02X", mess_ptr[i]);
+	//suppression du message
+	lora_tail[q_id] = tail_prov;
 
-				tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
-			}
-		lora_tail[q_id] = tail_prov;
-
-		if (lora_tail[q_id] == lora_head[q_id]) // dernier message
-			mess->param = mess->param | 1;
-		//osDelay(300);
-		//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
-		//LOG_INFO("dequeuelora:head:%d tail:%d mess:%s len:%i", lora_head, lora_tail, mess->data, mess->length);
-
-		//osDelay(300);
-
-    // Analyser s'il y a un autre message à envoyer dans la pile
-    // TODO  à faire
-    // Si oui, mettre le bit 0 de mess.param à 0, sinon mettre 1
-
-    osMutexRelease(lora_bufferMutex);
-    return 0;
+	osMutexRelease(lora_bufferMutex);
+	return 0; //ok
 }
 
-// return 0:au moins 1 message    1:queue vide 2-3:erreur   4:dest inconnu
-uint8_t mess_LORA_dequeue_fictif(uint8_t q_id, uint8_t dest)
+// return : 0:trouvé, 1:vide, 2-3-4:erreur
+uint8_t mess_lora_dequeue_premier_fictif(uint8_t q_id )
 {
+	if (lora_head[q_id] == lora_tail[q_id])
+		return 1;
 
-    if (lora_head[q_id] == lora_tail[q_id]) {
-        return 1; // FIFO vide
-    }
+	uint16_t tail_prov = lora_tail[q_id];
 
-    if (q_id == 0)   // Classe C
-    {
-		uint16_t size = lora_buff[lora_tail[q_id]][q_id];  // 1er octet
+	uint8_t size = lora_buff[tail_prov][q_id];  // 1er octet
+	// Vérif longueur valide
+	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
+	{
+		lora_head[q_id] = 0;
+		lora_tail[q_id] = 0;
+		return 2; // corruption détectée
+	}
+	// Vérif que les données tiennent dans la FIFO actuelle
+	uint16_t available = (lora_head[q_id] >= tail_prov) ?
+						 (lora_head[q_id] - tail_prov) :
+						 (MESS_BUFFER_SIZE - (tail_prov - lora_head[q_id]));
 
-		// Vérif longueur valide
-		if ((size < 5) || (size > MESS_LG_MAX) || lora_tail[q_id] >= MESS_BUFFER_SIZE)
-		{
-			lora_head[q_id] = 0;
-			lora_tail[q_id] = 0;
-			return 2; // corruption détectée
-		}
-
-		// Vérif que les données tiennent dans la FIFO actuelle
-		uint16_t available = (lora_head[q_id] >= lora_tail[q_id]) ?
-							 (lora_head[q_id] - lora_tail[q_id]) :
-							 (MESS_BUFFER_SIZE - (lora_tail[q_id] - lora_head[q_id]));
-
-		if (available < size) {
-			return 3; // corruption : message incomplet
-		}
-		return 0;  // au moins 1 message
-    }
-    else  // Classe A ou B
-    {
-    	uint8_t node_id = Node_id(dest);
-    	if(!node_id)
-        	return 4;  // node pas trouvé
-    	else
-    	{
-    		node_id--;
-    		q_id = nodes[node_id].class;
-    		if (q_id > 2) {
-    			code_erreur = depass_q_id;
-    			err_donnee1 = 1;
-    			q_id=0;
-    			nodes[node_id].class = 0;
-    		}
-    	}
-
-    	uint16_t pos;
-    	mess_lora_cherche(node_id, 0, &pos);
-    	uint16_t tail_prov = lora_tail[q_id];
-    	while ( tail_prov != lora_head[q_id] )
-    	{
-    		uint16_t size = lora_buff[tail_prov][q_id];  // 1er octet
-    		// Vérif longueur valide
-    		if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
-    		{
-    			lora_head[q_id] = 0;
-    			lora_tail[q_id] = 0;
-    			return 2; // corruption détectée
-    		}
-    		// Vérif que les données tiennent dans la FIFO actuelle
-			uint16_t available = (lora_head[q_id] >= tail_prov) ?
-								 (lora_head[q_id] - tail_prov) :
-								 (MESS_BUFFER_SIZE - (tail_prov - lora_head[q_id]));
-
-			if (available < size) {
-				return 3; // corruption : message incomplet
-			}
-			tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
-			if ( dest == lora_buff[tail_prov][q_id] ) return 0;  // message trouvé
-			else  // essayer message suivant
-			{
-				tail_prov = (tail_prov -1 + size) % MESS_BUFFER_SIZE;
-			}
-    	}
-    	return 1; // pas de correspondance trouvée pour ce dest
-    }
+	if (available < size + 4) {
+		lora_head[q_id] = 0;
+		lora_tail[q_id] = 0;
+		return 3; // corruption : message incomplet
+	}
+	return 0;
 }
 
 // return 0:ok 1-4:erreur
@@ -1394,6 +1456,7 @@ uint8_t mess_LORA_suppression(uint8_t node, uint8_t* nb_mess_supp)
 	return 0; // fin
 }
 
+
 // return : 0:trouvé, 1:vide, 2-3-4:erreur
 // cpt=0 chercher le premier, cpt=1 : compte =>pos
 uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos )
@@ -1410,7 +1473,7 @@ uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos )
 
 	while ( tail_prov != lora_head[q_id] )
 	{
-		uint16_t size = lora_buff[tail_prov][q_id];  // 1er octet
+		uint8_t size = lora_buff[tail_prov][q_id];  // 1er octet
 		// Vérif longueur valide
 		if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
 		{
@@ -1423,7 +1486,7 @@ uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos )
 							 (lora_head[q_id] - tail_prov) :
 							 (MESS_BUFFER_SIZE - (tail_prov - lora_head[q_id]));
 
-		if (available < size) {
+		if (available < size+4) {
 			lora_head[q_id] = 0;
 			lora_tail[q_id] = 0;
 			return 3; // corruption : message incomplet
@@ -1437,7 +1500,7 @@ uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos )
 			if (!cpt) return 0;
 		}
 		// aller au message suivant
-     	tail_prov = (tail_prov + size) % MESS_BUFFER_SIZE;
+     	tail_prov = (tail_prov + size+4) % MESS_BUFFER_SIZE;
 	}
 	if (cpt) *pos = compteur;
 	return 1; // fin
@@ -1467,6 +1530,8 @@ uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos, uint16_t size)
 
 	osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
 	if (status != osOK) return 3;
+
+	size = size +4;
 
 	uint16_t tail = lora_tail[q_id];
 	uint16_t head = lora_head[q_id];

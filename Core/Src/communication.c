@@ -1271,7 +1271,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				    LOG_ERROR("Erreur écriture EEPROM ");
 			     }
 			  }
-			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora
+			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora vers concen
 			  {
                   envoie_mess_ASC(param_def, "HTL1");
 			  }
@@ -1279,6 +1279,32 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  {
                   envoie_mess_ASC(param_def, "AOKK");
                   envoie_mess_ASC(param_def, "ABBB");
+			  }
+			  if ( (message_in[4] =='A')  && (longueur_m==7))  // 1TEAxx : envoi par lora vers node
+			  {
+				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
+                  envoie_mess_ASC(param_def, "UTL1");
+			  }
+			  if ( (message_in[4] =='B')  && (longueur_m==7))  // 1TEBxx : envoi 2 mess par lora
+			  {
+				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
+                  envoie_mess_ASC(param_def, "UOKK");
+                  envoie_mess_ASC(param_def, "UBBB");
+			  }
+			  if ( (message_in[4] =='C')  && (longueur_m==7))  // 1TECxx : envoi 1 mess par lora
+			  {
+				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
+                  envoie_mess_ASC(param_def, "UTES");
+			  }
+			  if ( (message_in[4] =='D')  && (longueur_m==9))  // 1TEDxzyy : envoi 1 mess par lora
+			  {
+				  uint8_t dest = message_in[5];
+				  uint8_t nb = message_in[6]-'0';
+				  param_def = (message_in[7]-'0')*16 + message_in[8]-'0';
+				  for (uint8_t i=0; i<nb; i++)
+				  {
+					  envoie_mess_ASC(param_def, "%cTES%i", dest, i);
+				  }
 			  }
 			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param xy
 			  {

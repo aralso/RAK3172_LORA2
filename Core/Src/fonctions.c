@@ -283,6 +283,10 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
     if (hlptim->Instance == LPTIM2)
     {
+    	if (g_rx_state == RX_ATTENTE)  // message RX non recu
+    	{
+    		g_rx_state = RX_IDLE;
+    	}
     	if (g_tx_state == RX_RESPONSES)
     	{
     		g_tx_state = TX_IDLE;   // pret à renvoyer des messages
@@ -303,7 +307,7 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
     if (hlptim->Instance == LPTIM3)
     {
-        UTIL_TIMER_IRQ_Handler();  // Traiter les timers expirés
+        UTIL_TIMER_IRQ_Handler();  // Traiter les timers expirés de la radio
     }
 }
 

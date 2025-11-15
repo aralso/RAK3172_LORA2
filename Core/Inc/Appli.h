@@ -16,6 +16,7 @@
 #define LED_GPIO_Port GPIOA
 #define bouton_Pin GPIO_PIN_12
 #define bouton_GPIO_Port GPIOA
+#define ID_CONCENTRATOR	'H'
 
 #define CODE_VERSION  "1.9"
 #define CODE_TYPE 'A'  // A:End_node Radar
@@ -26,7 +27,7 @@
 	#define My_Address 'U'
 	#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 #else
-	#define My_Address 'H'
+	#define My_Address ID_CONCENTRATOR
 	#define CLASS LORA_CLASS_C
 #endif
 

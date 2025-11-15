@@ -126,6 +126,7 @@ typedef struct radio_RxParam_s
 
 
 extern  lora_tx_state_t g_tx_state;
+extern  lora_rx_state_t g_rx_state;
 extern struct lora_etat_s lora_etat;
 extern uint8_t att_cad;
 extern uint8_t g_tx_class, g_tx_dest;
@@ -147,6 +148,13 @@ uint8_t Node_id(uint8_t dest);
 uint8_t ajout_node(uint8_t emetteur);
 void lecture_Nodes(void);
 uint8_t suppression_node(uint8_t node);
+uint8_t mess_LORA_enqueue(out_message_t* mess);
+uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id, uint8_t dest);
+uint8_t mess_LORA_dequeue_fictif(uint8_t classe, uint8_t dest);
+uint8_t mess_lora_dequeue_premier_fictif(uint8_t q_id );
+uint8_t mess_lora_dequeue_premier(out_message_t* mess, uint8_t q_id );
+uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos, uint16_t size);
+
 
 // Callbacks Radio → LoRa layer
 void lora_on_tx_done(void);
@@ -191,10 +199,6 @@ void diagnose_radio_deep_sleep(void);
 void test_radio_write_register(void);
 void SetRadioTxParam (uint8_t param, uint8_t val);
 void PrintRadioTxParam(void);
-uint8_t mess_LORA_enqueue(out_message_t* mess);
-uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id);
-uint8_t mess_LORA_dequeue_fictif(uint8_t classe, uint8_t dest);
-uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos, uint16_t size);
 
 // Comptage LPTIM1 et calculs balise
 void lora_on_lptim1_10s_tick(void);
