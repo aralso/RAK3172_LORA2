@@ -242,6 +242,22 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 			code_erreur = ISR_callback; 	err_donnee1 = 1; }*/
 
+		#if (CODE_TYPE == 'C')  // garches chaudiere moteur
+			if (counter % 6 == 0) {  // Toutes les 60 secondes
+				event_t evt = { EVENT_TIMER_1min, 0, 0 };
+				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+					code_erreur = ISR_callback; 		err_donnee1 = 7; }
+			}
+		#endif
+
+		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
+			if (counter % 30 == 0) {  // Toutes les 5 minutes
+				event_t evt = { EVENT_TIMER_5min, 0, 0 };
+				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+					code_erreur = ISR_callback; 		err_donnee1 = 7; }
+			}
+		#endif
+
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
 			event_t evt = { EVENT_TIMER_20min, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {

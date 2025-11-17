@@ -53,6 +53,7 @@ uint8_t uart_timeout_on;
 uint16_t cpt_rx_uart;
 
 static out_message_t log_buffer;
+out_message_t message;
 static uint16_t len_ASC;
 static out_message_t form_buf; // Buffer pour le formatage de message ASCII
 static SemaphoreHandle_t log_mutex = NULL;
@@ -76,7 +77,6 @@ uint8_t uart_rx_char;
 
 UartStruct UartSt[NB_UART];
 
-out_message_t message;
 
 extern QueueHandle_t Event_QueueHandle;
 
@@ -480,7 +480,7 @@ void reception_message_Uart2(in_message_t *msg)
 	if (msg->type == 0)
 	{
 		// Message ASCII
-		//LOG_INFO("Received ASCII message: %.*s", msg->length, msg->data);
+		LOG_INFO("Received ASCII message: %.*s", msg->length, msg->data);
 		//LOG_INFO("Received ASCII message: %s lg:%d", msg->data, msg->length);
 	}
 	else
@@ -602,7 +602,7 @@ uint8_t envoie_mess_bin(out_message_t* mess)
 	mess->length = len;
 	mess->type = 1;  // binaire
 	mess->dest = mess->data[0] & 0x7F;
-	mess->param = 0;
+
 
 	// Envoyer le message
 	uint8_t res = envoie_routage(mess);
@@ -1037,7 +1037,8 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           {
               memcpy (message.data, message_in, longueur_m + 1);
               message.length = longueur_m+1;
-              message.param = 0;
+              message.param = param_def;
+              message.dest = message_in[0] & 0x7F;
 
               if (message_in[0] & 80) message.type =1;
               envoie_routage (&message);  // envoi du message
@@ -1138,33 +1139,21 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                   }
               }
           }
-          if ((message_in[2] == 'S') && (message_in[3] == 'L'))
+          if ((message_in[2] == 'S') && (message_in[3] == 'L'))   // SL : Lecture Statut
           {
               if ( (message_in[4] =='O')  && (longueur_m==5))  // 1SLO
               {
                   envoie_mess_ASC(param_def, "1OKK");
               }
-              if ( (message_in[4] =='V')  && (longueur_m==5))  // 1SLV : version
+              if ( (message_in[4] =='V')  && (longueur_m==5))  // 1SLV : version-type
               {
-                  envoie_mess_ASC(param_def, "%cVer:%s", message.data[0], CODE_VERSION);
+                  envoie_mess_ASC(param_def, "%cVer:%s Type:%c", message.data[0], CODE_VERSION, CODE_TYPE);
               }
-              if ( (message_in[4] =='T')  && (longueur_m==5))  // 1SLT : Type de node
-              {
-                  envoie_mess_ASC(param_def, "%cType:%c", message.data[0], CODE_TYPE);
-              }
-              if ( (message_in[4] =='B')  && (longueur_m==5))  // 1SLB
-              {
-            	  // optimum :mess_bin[0] = 'U'; mess_bin[1] = 1; mess_bin[2] = 'O';
-            	  // optimum :uint8_t mess_bin[10] = {'U', 1, 'O', 'K'};
-            	  // moins bien: memcpy(mess_bin, "U\1OK", 4);
-            	  // pas bien  : sprintf((char*)mess_bin, "U%cOK", 1);
-
-            	  memcpy(message.data, (uint8_t[]){'1', 1, 'O', 'K'}, 4);
-                  envoie_mess_bin(&message);
-              }
-              if ( (message_in[4] =='N') && (message_in[5] =='E') && (longueur_m==6))  // SLNE  Lecture Nodes
+              if ( (message_in[4] =='N') && (message_in[5] =='L') && (longueur_m==6))  // SLLN  Nodes Liste
   				      lecture_Nodes();
-              if ( (message_in[4] =='N') && (message_in[5] =='S') && (longueur_m==7))  // SLNSx  suppression Node x
+              if ( (message_in[4] =='N') && (message_in[5] =='I') && (longueur_m==8))  // SLIN  Info MEssages Node x
+  				      info_Node(message_in[6]-'0', message_in[7]-'0');
+              if ( (message_in[4] =='N') && (message_in[5] =='S') && (longueur_m==7))  // SLSNx  suppression Node x
   				      suppression_node(message_in[6]-'0');
 
               if ( (message_in[4] =='T') && (message_in[5] =='a') && (longueur_m==6))  // SLTa  Stack des taches
@@ -1176,67 +1165,25 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // SLRe  Reset cause et diagnostic
             	  display_reset_cause();
 
-              if ( (message_in[4] =='R') && (message_in[5] =='1') && (longueur_m==6))  // SLR1  Etat radio
+              if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLR1  Radio Etat
               {
-          		LOG_INFO("SUBGHZ State: %d", hsubghz.State);
-          		LOG_INFO("SUBGHZ DeepSleep: %d", hsubghz.DeepSleep);
+          		LOG_INFO("Radio : Etat:%d Sleep:%d", hsubghz.State, hsubghz.DeepSleep);
               }
-              if ( (message_in[4] =='R') && (message_in[5] =='2') && (longueur_m==6))  // SLR2  Envoie message
-              {
-            	  //sendRadio();
-            	  SendFrameModif(1);
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='3') && (longueur_m==6))  // SLR3 test radio
-              {
-                  test_radio_progressive();
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='4') && (longueur_m==6))  // SLR4 test radio sleep
-              {
-                  diagnose_radio_deep_sleep();
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='5') && (longueur_m==6))  // SLR4 test radio sleep
-            	  check_radio_power_supply();
-              if ( (message_in[4] =='R') && (message_in[5] =='6') && (longueur_m==6))  // SLR4 test radio sleep
-            	  test_radio_write_register();
-              if ( (message_in[4] =='R') && (message_in[5] =='7') && (longueur_m==6))  // SLR4 test radio sleep
-            	  test_radio_configuration_detailed();
-              if ( (message_in[4] =='R') && (message_in[5] =='8') && (longueur_m==6))  // SLR4 test radio sleep
-            	  test_radio_wakeup_methods();
-              if ( (message_in[4] =='R') && (message_in[5] =='9') && (longueur_m==6))  // SLR4 test radio sleep
-            	  test_radio_direct_transmission();
-
-              if ( (message_in[4] =='R') && (message_in[5] =='A') && (longueur_m==6))  // SLR4 test radio sleep
-            	  check_radio_hardware_configuration();
-              if ( (message_in[4] =='R') && (message_in[5] =='B') && (longueur_m==6))  // SLRB test radio sleep
-              {
-					uint8_t mess_lora[20] = "Mess LORA Test";
-					Radio.Send(mess_lora, strlen((char*)mess_lora));
-              };
-              if ( (message_in[4] =='R') && (message_in[5] =='C') && (longueur_m==6))  // SLR4 test radio sleep
-            	  try_radio_wakeup_all_commands();
-              if ( (message_in[4] =='R') && (message_in[5] =='D') && (longueur_m==8))  // SLRDxy TX paramx = y
+              if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // SLRXxy Radio TX paramx = y
               {
             	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
               }
-              if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLRDxy TX paramx = y
+              if ( (message_in[4] =='R') && (message_in[5] =='L') && (longueur_m==6))  // SLRL  Radio Lecture etat
               {
             	  PrintRadioTxParam();
               }
-              if ( (message_in[4] =='R') && (message_in[5] =='F') && (longueur_m==6))  // SLRF  envoie mess lora
-              {
-                  envoie_mess_ASC(param_def, "BSLRG");
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='G') && (longueur_m==6))  // SLRG  mess recu du node
-              {
-                  LOG_INFO("mess recu SLRG");
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='T') && (longueur_m==6))  // SLRT  Etat lora transmission
+              if ( (message_in[4] =='R') && (message_in[5] =='T') && (longueur_m==6))  // SLRT  Etat Radio transmission
               {
                   LOG_INFO("etat LORA Tx: ok:%i renvoi:%i supp:%i timeout:%i busy:%i trop long:%i", \
                 		  lora_etat.mess_envoy_ok, lora_etat.mess_renvoyes, lora_etat.mess_envoy_supp, lora_etat.lora_tx_timeout, \
 						  lora_etat.channel_busy, lora_etat.tx_trop_long);
               }
-              if ( (message_in[4] =='R') && (message_in[5] =='R') && (longueur_m==6))  // SLRR  Etat lora reception
+              if ( (message_in[4] =='R') && (message_in[5] =='R') && (longueur_m==6))  // SLRR  Etat Radio reception
               {
                   LOG_INFO("etat LORA Rx: ok:%i radio:%i error:%i", \
                 		  lora_etat.mess_recu_ok, lora_etat.radio_rx, lora_etat.lora_rx_error);
@@ -1245,9 +1192,9 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               {
             	  for (uint8_t i=0; i<nb_nodes; i++)
             	  {
-                  LOG_INFO("Nodes %i add:%i val:%i class:%i recu:%i envoi:%i, err:%i rssi:%i", \
-                		  nodes[i].adresse, nodes[i].valid, nodes[i].class, nodes[i].nb_recus, \
-						  nodes[i].nb_envoyes, nodes[i].nb_err, nodes[i].latestRssi);
+                  LOG_INFO("Node %i: val:%i class:%i recu:%i envoi:%i, err:%i rssi:%i add:%c", \
+                		  i, nodes[i].valid, nodes[i].class, nodes[i].nb_recus, \
+						  nodes[i].nb_envoyes, nodes[i].nb_err, nodes[i].latestRssi, nodes[i].adresse);
             	  }
               }
           }
@@ -1257,29 +1204,17 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  if ( (message_in[4] =='T')  && (longueur_m==6))  // 1TTTx : mess recu
 			  {
 				  param_def = 0x10; // 10:pas d'ack, pas de rx apres
-				  LOG_INFO("envoi UTES");
-                  envoie_mess_ASC(param_def, "UTES");
+				  LOG_INFO("envoi UTEQ");
+                  envoie_mess_ASC(param_def, "UTEQ");
 			  }
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Tests
           {
-			  if ( (message_in[4] =='E')  && (longueur_m==7))  // Ecriture eeprom  1TEE12
-			  {
-			     if (EEPROM_Write8(message_in[5]-'0', message_in[6]-'0') == HAL_OK) {
-				    LOG_INFO("EEPROM écrit");
-			     } else {
-				    LOG_ERROR("Erreur écriture EEPROM ");
-			     }
-			  }
-			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora vers concen
-			  {
-                  envoie_mess_ASC(param_def, "HTL1");
-			  }
-			  if ( (message_in[4] =='U')  && (longueur_m==5))  // 1TEU : envoi 2 mess par lora
-			  {
-                  envoie_mess_ASC(param_def, "AOKK");
-                  envoie_mess_ASC(param_def, "ABBB");
-			  }
+		      if ( (message_in[4] =='0')  && (longueur_m==7))  // LEcture Log 1TE001
+		      {
+			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
+			     LOG_INFO("Logs lus: %i", logs_read);
+		      }
 			  if ( (message_in[4] =='A')  && (longueur_m==7))  // 1TEAxx : envoi par lora vers node
 			  {
 				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
@@ -1306,19 +1241,13 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					  envoie_mess_ASC(param_def, "%cTES%i", dest, i);
 				  }
 			  }
-			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param xy
+			  if ( (message_in[4] =='E')  && (longueur_m==7))  // Ecriture eeprom  1TEE12
 			  {
-				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
-				 LOG_INFO("param : %02X", param_def);
-			  }
-			  if ( (message_in[4] =='R')  && (longueur_m==6))  // Lecture eeprom  1TER1
-			  {
-				uint8_t value;
-				if (EEPROM_Read8(message_in[5]-'0', &value) == HAL_OK) {
-					LOG_INFO("EEPROM lu: adresse %d = 0x%02X", message_in[5]-'0', value);
-				} else {
-					LOG_ERROR("Erreur lecture EEPROM ");
-				}
+			     if (EEPROM_Write8(message_in[5]-'0', message_in[6]-'0') == HAL_OK) {
+				    LOG_INFO("EEPROM écrit");
+			     } else {
+				    LOG_ERROR("Erreur écriture EEPROM ");
+			     }
 			  }
 			  if ( (message_in[4] =='L')  && (longueur_m==7))  // Ecriture LOG  1TEL12
 			  {
@@ -1331,11 +1260,39 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_ERROR("Erreur écriture LOG ");
 			    }
 		      }
-		      if ( (message_in[4] =='A')  && (longueur_m==7))  // LEcture Log 1TEA01
-		      {
-			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
-			     LOG_INFO("Logs lus: %i", logs_read);
-		      }
+			  if ( (message_in[4] =='Q')  && (longueur_m==5))  // TEQ : envoi vers port serie
+			  {
+                  envoie_mess_ASC(param_def, "1AAA");
+			  }
+			  if ( (message_in[4] =='R')  && (longueur_m==6))  // TERx Lecture eeprom
+			  {
+				uint8_t value;
+				if (EEPROM_Read8(message_in[5]-'0', &value) == HAL_OK) {
+					LOG_INFO("EEPROM lu: adresse %d = 0x%02X", message_in[5]-'0', value);
+				} else {
+					LOG_ERROR("Erreur lecture EEPROM ");
+				}
+			  }
+			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora vers concen
+			  {
+                  envoie_mess_ASC(param_def, "HTL1");
+			  }
+			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param_def xy
+			  {
+				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
+				 LOG_INFO("param : %02X", param_def);
+			  }
+			  if ( (message_in[4] =='U')  && (longueur_m==5))  // 1TEU : envoi 2 mess par lora
+			  {
+                  envoie_mess_ASC(param_def, "AOKK");
+                  envoie_mess_ASC(param_def, "ABBB");
+			  }
+			  if ( (message_in[4] =='U')  && (longueur_m==7))  // 1TEU :
+			  {
+				  uint8_t ret = mess_LORA_suppression_milieu(message_in[5]-'0', message_in[6]-'0');
+				 LOG_INFO("supp %i", ret);
+			  }
+
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'L'))  // Tests
           {

@@ -153,7 +153,10 @@ uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id, uint8_t dest);
 uint8_t mess_LORA_dequeue_fictif(uint8_t classe, uint8_t dest);
 uint8_t mess_lora_dequeue_premier_fictif(uint8_t q_id );
 uint8_t mess_lora_dequeue_premier(out_message_t* mess, uint8_t q_id );
-uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos, uint16_t size);
+uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos);
+uint8_t mess_lora_cherche_size(uint8_t node_id, uint8_t cpt, uint16_t* pos, uint16_t* size_tot);
+void info_Node(uint8_t id, uint8_t cpt);
+uint8_t mess_LORA_suppression(uint8_t node, uint8_t* nb_mess_supp);
 
 
 // Callbacks Radio → LoRa layer

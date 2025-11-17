@@ -40,9 +40,6 @@
 #define CURRENT_LOG_LEVEL  LOG_LEVEL_DEBUG
 #define WRITE_LOG_LEVEL	 LOG_LEVEL_WARNING
 
-extern uint8_t code_erreur, comptage_erreur;
-extern uint8_t err_donnee1, err_donnee2;
-extern uint8_t param_def;
 
 // Code erreur
 
@@ -72,6 +69,7 @@ extern uint8_t param_def;
 #define log_w_err_uart_bloque	0x01
 #define log_w_reseau_occupe		0x02
 #define tx_lora_node_non_identifie	0x03
+#define log_w_err_temp	0x04
 
 #define UART_SEND(msg) do { \
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
@@ -128,6 +126,11 @@ void debug_uart_complete(void);
 #define LOG_INFO(...)    print_log(LOG_LEVEL_INFO,    __VA_ARGS__)
 #define LOG_DEBUG(...)   print_log(LOG_LEVEL_DEBUG,   __VA_ARGS__)
 #define LOG_VERBOSE(...) print_log(LOG_LEVEL_VERBOSE, __VA_ARGS__)
+
+extern uint8_t code_erreur, comptage_erreur;
+extern uint8_t err_donnee1, err_donnee2;
+extern uint8_t param_def;
+extern out_message_t message;
 
 extern osThreadId_t Uart_TX_TaskHandle;
 extern UART_HandleTypeDef hlpuart1;

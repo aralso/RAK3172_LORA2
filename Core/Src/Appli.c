@@ -64,6 +64,9 @@ uint8_t cpt_timer20s;
 uint8_t cpt_message;
 uint8_t mess_pay[100];
 
+uint16_t temp;
+uint8_t hygro;
+
 /* Definitions for LORA_RX_Task */
 osThreadId_t LORA_RX_TaskHandle;
 const osThreadAttr_t LORA_RX_Task_attributes = {
@@ -89,6 +92,7 @@ const osThreadAttr_t Appli_Task_attributes = {
 void LORA_RXTsk(void *argument);
 void LORA_TXTsk(void *argument);
 void Appli_Tsk(void *argument);
+uint8_t mesure_temp(uint16_t* temp, uint8_t* hygro);
 
 
 void init1()  // avant KernelInitialize
@@ -733,19 +737,49 @@ void Appli_Tsk(void *argument)
 						   (expiry > now) ? (expiry - now) : 0);
 					break;
 				}
+
+				case EVENT_TIMER_1min: { // moteur
+					LOG_INFO("timer 1min");
+					break;
+				}
+				case EVENT_TIMER_5min: {  // Thermometre
+					LOG_INFO("timer 5min");
+					uint8_t ret = mesure_temp(&temp, &hygro);
+					if (ret)
+					{
+						LOG_INFO("erreur_temp:%i", ret);
+						log_write('E', log_w_err_temp, ret, 0, "Err_Temp");
+					}
+					else
+					{
+						param_def = 0x10; // 2 avec ack, 2 renvois
+						envoie_mess_ASC(param_def, "HT%i-%i", temp, hygro);     // CTxxyy
+						envoie_mess_ASC(param_def, "JT%i-%i", temp, hygro);     // CTxxyy
+						message.param = param_def;
+					    message.data[0] = 'J';
+					    message.data[1] = 4;
+					    message.data[2] = 'C';
+					    message.data[3] = 'H';
+					    message.data[4] = (temp>>8);
+					    message.data[5] = (temp & 0xFF);
+					    message.data[6] = hygro;
+					    envoie_mess_bin(&message);
+					}
+					break;
+				}
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
 					LOG_INFO("timer 20s");
 
 					cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
-					if ((cpt_timer20s==1) || ((cpt_timer20s%2) == 0))
+					if ((cpt_timer20s==1) || ((cpt_timer20s%3) == 0))
 					{
 						cpt_message++;
-						param_def=0x10; // 0x10 sans ack
-						if (cpt_message==2) param_def = 0;  // 0:avec ack, sans renvoi
-						if (cpt_message==3) param_def = 2;  // 2:avec ack, 2 renvois
-						if (cpt_message==4) param_def = 0x30;  // 0x30:sans ack, RX apres
+						param_def=0x30; // 0x30 sans Ack, RX apres   0x10 sans ack
+						if (cpt_message==2) param_def = 0x30;  // 0x20:avec ack, RX apres
+						if (cpt_message==3) param_def = 0x30;  // 2:avec ack, 2 renvois
+						if (cpt_message==4) param_def = 0x20;  // 0x30:sans ack, RX apres
 						envoie_mess_ASC(param_def, "HTTT%i", cpt_message);
 					}
 					//LOG_INFO("Entrée en mode Stop avec HSI...");
@@ -848,3 +882,9 @@ void assert_failed(const char *file, int line)
 /* USER CODE END Callback 1 */
 }
 
+uint8_t mesure_temp(uint16_t* temp, uint8_t* hygro)
+{
+	*temp=10;
+	*hygro = 52;
+	return 0;
+}
