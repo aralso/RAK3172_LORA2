@@ -917,19 +917,20 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 				if (message_recu.param & 1)  // dernier RX
 				{
 					g_tx_state = TX_IDLE;
+
 					uint8_t classe = 0;
 					#ifndef END_NODE
 						classe = nodes[node_id].class;
 					#endif
-					uint8_t vide = mess_LORA_dequeue_fictif(classe, payload[2]);  // 0:mess
+					/*uint8_t vide = mess_LORA_dequeue_fictif(classe, payload[2]);  // 0:mess
 
 					char init_msg[] = "VIDE:xy\n\r";
 					init_msg[5] = vide+'0';
 					init_msg[6] = rx_tx_apres+'0';
 				    uint16_t len = strlen(init_msg);
-				    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
+				    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);*/
 
-					if ((!vide) && (rx_tx_apres)) // mess a envoyer ET node en ecoute RX
+					if ((rx_tx_apres)) // node en ecoute RX
 					{
 						rx_tx_apres=0;
 						g_tx_class = classe;
@@ -1112,6 +1113,7 @@ uint8_t ajout_node(uint8_t emetteur)
 	else return 1;
 }
 
+// node : lettre
 uint8_t suppression_node(uint8_t node)
 {
 #ifndef END_NODE
@@ -1149,7 +1151,7 @@ uint8_t suppression_node(uint8_t node)
 		nodes[nb_nodes].latestRssi = 0;
 	}
 
-	LOG_INFO("Node %c-%i supprimé, %i messages supprimés, nb_nodes=%i", node, node_id, nb_mess_supp, nb_nodes);
+	LOG_INFO("Node %c-%i supprime, %i messages supprimes, nb_nodes=%i", node, node_id, nb_mess_supp, nb_nodes);
 #endif
 	return 0;  // Succès
 }

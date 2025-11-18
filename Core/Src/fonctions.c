@@ -457,6 +457,10 @@ void check_stack_usage(void)
     // Vérifier chaque tâche
     //LOG_INFO("=== STACK USAGE REPORT ===");
 
+    // Uart_TX_Task
+    stack_high_water_mark = uxTaskGetStackHighWaterMark(Uart_TX_TaskHandle);
+    LOG_INFO("Uart_TX_Task: %i free", stack_high_water_mark);
+
     // default_Task
     stack_high_water_mark = uxTaskGetStackHighWaterMark(defaultTaskHandle);
     LOG_INFO("Default_Task: %i free", (uint16_t) stack_high_water_mark);
@@ -473,9 +477,6 @@ void check_stack_usage(void)
     stack_high_water_mark = uxTaskGetStackHighWaterMark(LORA_RX_TaskHandle);
     LOG_INFO("LORA_RX_Task: %i free", stack_high_water_mark);
 
-    // Uart_TX_Task
-    stack_high_water_mark = uxTaskGetStackHighWaterMark(Uart_TX_TaskHandle);
-    LOG_INFO("Uart_TX_Task: %i free", stack_high_water_mark);
 
     // Uart1_Task
     stack_high_water_mark = uxTaskGetStackHighWaterMark(Uart_RX_TaskHandle);

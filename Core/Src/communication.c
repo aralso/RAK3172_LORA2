@@ -362,11 +362,14 @@ void Uart_RX_Tsk(void *argument)
    			    uart_timeout_rx = get_rtc_seconds_since_midnight();
    			    uart_timeout_on = 1;
 
-				#ifdef UART_AJOUT_EMETTEUR
-				  if (buffer_index==1)
-				  {
-	            	mess_rx_uart.data[buffer_index++] = '1';
-				  }
+				#ifdef UART_AJOUT_EMETTEUR  // 1yyy->X1yyy   Xyyy->X1yyy   Qyyy->QXyyy
+			    if (buffer_index==1)
+				{
+		           	if (rx_char == My_Address)  // dest local
+		           		mess_rx_uart.data[buffer_index++] = '1';
+		           	else
+		           		mess_rx_uart.data[buffer_index++] = My_Address;
+				}
 				#endif
 
                 // Traitement selon le type
@@ -616,13 +619,15 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	uint8_t destinataire, i, j, retc;
 	retc=1;
 
+	LOG_INFO("envoi routage dest:%c lg:%i %s", mess->dest, mess->length, mess->data);
 
 	destinataire = mess->dest;
 
 	if (((destinataire == My_Address) && (My_Address!='1')) || (destinataire == '0'))   // envoi sur soi-meme -loop
 	{
-	    if (mess->length < MESS_LG_MAX -1)
+	    if (mess->length && (mess->length < MESS_LG_MAX -1))
 	    {
+	    	mess->length--;
 	        //message_in[0] = '0' + message[0] & 0x80;  // emetteur=loop
 	        traitement_rx (mess->data, mess->length);
 	        retc=0;
@@ -1149,15 +1154,16 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               {
                   envoie_mess_ASC(param_def, "%cVer:%s Type:%c", message.data[0], CODE_VERSION, CODE_TYPE);
               }
-              if ( (message_in[4] =='N') && (message_in[5] =='L') && (longueur_m==6))  // SLLN  Nodes Liste
+              if ( (message_in[4] =='N') && (message_in[5] =='L') && (longueur_m==6))  // SLNL  Nodes Liste
   				      lecture_Nodes();
-              if ( (message_in[4] =='N') && (message_in[5] =='I') && (longueur_m==8))  // SLIN  Info MEssages Node x
+              if ( (message_in[4] =='N') && (message_in[5] =='I') && (longueur_m==8))  // SLNIxy  Info MEssages Node x
   				      info_Node(message_in[6]-'0', message_in[7]-'0');
-              if ( (message_in[4] =='N') && (message_in[5] =='S') && (longueur_m==7))  // SLSNx  suppression Node x
-  				      suppression_node(message_in[6]-'0');
+              if ( (message_in[4] =='N') && (message_in[5] =='S') && (longueur_m==7))  // SLNSx  suppression Node x (lettre)
+  				      suppression_node(message_in[6]);
 
               if ( (message_in[4] =='T') && (message_in[5] =='a') && (longueur_m==6))  // SLTa  Stack des taches
   				 check_stack_usage();
+              // free : defaut:358 Appli:358 Lora_TX:358 LORA_RX:358 UartTX:163 UartRx:471
 
               if ( (message_in[4] =='W') && (message_in[5] =='a') && (longueur_m==6))  // SLWa  Watchdog etat
             	  watchdog_print_status();
@@ -1165,7 +1171,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // SLRe  Reset cause et diagnostic
             	  display_reset_cause();
 
-              if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLR1  Radio Etat
+              if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLRE  Radio Etat
               {
           		LOG_INFO("Radio : Etat:%d Sleep:%d", hsubghz.State, hsubghz.DeepSleep);
               }
@@ -1196,6 +1202,37 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                 		  i, nodes[i].valid, nodes[i].class, nodes[i].nb_recus, \
 						  nodes[i].nb_envoyes, nodes[i].nb_err, nodes[i].latestRssi, nodes[i].adresse);
             	  }
+              }
+          }
+
+          if ((message_in[2] == 'O'))  // OK
+        	  if (message_in[3] == 'K')
+        		  LOG_INFO("mess og recu");
+
+          if ((message_in[2] == 'T') && (message_in[3] == 'L'))  //  TL  test
+          {
+              if ((message_in[4] == '0') && (longueur_m==5))  // TL0 renvoie OK
+              {
+				  //param_def = 0x10; // 10:pas d'ack, pas de rx apres
+				  LOG_INFO("recep TL0");
+                  envoie_mess_ASC(param_def, "%cOK", message_in[1]);
+              }
+              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TT => print test_tab
+              {
+            	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
+            	  for (uint8_t i=0; i<test_index; i++)
+            	  {
+            		  LOG_INFO("ind:%i val:%u", i, test_tab[i]);
+            	  }
+              }
+              if ((message_in[3] == 'R') && (longueur_m==5))  // 1TR1 => envoi test radio
+              {
+            	  test_var=1;
+				// 1. Démarrer CAD
+				Radio.StartCad();
+
+				// 2. Attendre le résultat dans OnCadDone
+				// 3. Si canal libre, transmettre
               }
           }
 
@@ -1355,30 +1392,6 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		    	  EEPROM_GetStats(&total_entries, &free_space);
 		      }
          }
-          if ((message_in[2] == 'T'))  // test
-          {
-              if ((message_in[3] == 'A') && (longueur_m==6))  // 1TAxx => test_val
-            	  test_val = (message_in[4]-'0')*10 + (message_in[5]-'0');
-              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TT => print test_tab
-              {
-            	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
-            	  for (uint8_t i=0; i<test_index; i++)
-            	  {
-            		  LOG_INFO("ind:%i val:%u", i, test_tab[i]);
-            	  }
-              }
-              if ((message_in[3] == 'R') && (longueur_m==5))  // 1TR1 => envoi test radio
-              {
-            	  test_var=1;
-				// 1. Démarrer CAD
-				Radio.StartCad();
-
-				// 2. Attendre le résultat dans OnCadDone
-				// 3. Si canal libre, transmettre
-
-
-              }
-          }
       }
   }
 }

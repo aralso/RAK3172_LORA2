@@ -30,6 +30,7 @@
 	#elif CODE_TYPE == 'B' // Garches chaudiere Thermometre
 		#define My_Address 'I'
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
+		#define MAX_SENS 20
 	#elif CODE_TYPE == 'C' // Garches chaudiere Moteur
 		#define My_Address 'J'
 		#define CLASS LORA_CLASS_C  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps

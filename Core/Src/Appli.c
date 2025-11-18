@@ -64,8 +64,14 @@ uint8_t cpt_timer20s;
 uint8_t cpt_message;
 uint8_t mess_pay[100];
 
-uint16_t temp;
-uint8_t hygro;
+#if CODE_TYPE == 'B'
+	uint16_t temp;  // /10 + 100
+	uint8_t hygro;
+	uint8_t nb_samples=1;
+	uint8_t num_val_temp;
+	uint16_t tempe[MAX_SENS];
+	uint8_t humid[MAX_SENS];
+#endif
 
 /* Definitions for LORA_RX_Task */
 osThreadId_t LORA_RX_TaskHandle;
@@ -744,27 +750,28 @@ void Appli_Tsk(void *argument)
 				}
 				case EVENT_TIMER_5min: {  // Thermometre
 					LOG_INFO("timer 5min");
-					uint8_t ret = mesure_temp(&temp, &hygro);
-					if (ret)
-					{
-						LOG_INFO("erreur_temp:%i", ret);
-						log_write('E', log_w_err_temp, ret, 0, "Err_Temp");
-					}
-					else
-					{
-						param_def = 0x10; // 2 avec ack, 2 renvois
-						envoie_mess_ASC(param_def, "HT%i-%i", temp, hygro);     // CTxxyy
-						envoie_mess_ASC(param_def, "JT%i-%i", temp, hygro);     // CTxxyy
-						message.param = param_def;
-					    message.data[0] = 'J';
-					    message.data[1] = 4;
-					    message.data[2] = 'C';
-					    message.data[3] = 'H';
-					    message.data[4] = (temp>>8);
-					    message.data[5] = (temp & 0xFF);
-					    message.data[6] = hygro;
-					    envoie_mess_bin(&message);
-					}
+					#if CODE_TYPE == 'B'
+						uint8_t ret = mesure_temp(&temp, &hygro);
+						if (ret)
+						{
+							LOG_INFO("erreur_temp:%i", ret);
+							log_write('E', log_w_err_temp, ret, 0, "Err_Temp");
+						}
+						else
+						{
+							tempe[num_val_temp] = temp;
+							humid[num_val_temp] = hygro;
+							LOG_INFO("Temp:%i Hygro:%i", temp, hygro);
+							num_val_temp++;
+
+							// envoi des données, quand la trame est complète
+							if (num_val_temp == nb_samples)
+							{
+								envoi_data(num_val_temp);
+								num_val_temp = 0;  // nouvelle trame
+							}
+						}
+					#endif
 					break;
 				}
 				case EVENT_TIMER_20min: {
@@ -772,16 +779,18 @@ void Appli_Tsk(void *argument)
 					//LOG_INFO("a");
 					LOG_INFO("timer 20s");
 
-					cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
-					if ((cpt_timer20s==1) || ((cpt_timer20s%3) == 0))
-					{
-						cpt_message++;
-						param_def=0x30; // 0x30 sans Ack, RX apres   0x10 sans ack
-						if (cpt_message==2) param_def = 0x30;  // 0x20:avec ack, RX apres
-						if (cpt_message==3) param_def = 0x30;  // 2:avec ack, 2 renvois
-						if (cpt_message==4) param_def = 0x20;  // 0x30:sans ack, RX apres
-						envoie_mess_ASC(param_def, "HTTT%i", cpt_message);
-					}
+					#ifdef END_NODE
+						cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
+						if ((cpt_timer20s==1) || ((cpt_timer20s%3) == 0))
+						{
+							cpt_message++;
+							param_def=0x30; // 0x30 sans Ack, RX apres   0x10 sans ack
+							if (cpt_message==2) param_def = 0x30;  // 0x20:avec ack, RX apres
+							if (cpt_message==3) param_def = 0x30;  // 2:avec ack, 2 renvois
+							if (cpt_message==4) param_def = 0x20;  // 0x30:sans ack, RX apres
+							//envoie_mess_ASC(param_def, "HTTT%i", cpt_message);
+						}
+					#endif
 					//LOG_INFO("Entrée en mode Stop avec HSI...");
 					/*char init_msg[] = "mode stop\n\r";
 					  uint16_t len = strlen(init_msg);
@@ -888,3 +897,33 @@ uint8_t mesure_temp(uint16_t* temp, uint8_t* hygro)
 	*hygro = 52;
 	return 0;
 }
+
+#if CODE_TYPE == 'B'
+void envoi_data (uint8_t nb_valeur)
+{
+    uint8_t batteryLevel = GetBatteryLevel();
+   	LOG_INFO("Batt VDDA: %d\r\n", batteryLevel);
+
+	AppData.Buffer[i++] = TYPE_DEVICE;  // 2:capteur temperature STM32
+	AppData.Buffer[i++] = 0x41;  // code fonction
+	AppData.Buffer[i++] = nb_valeur*3+4;  // longueur des données
+	AppData.Buffer[i++] = 0;   // historique
+	/*AppData.Buffer[i++] = (timestamp_start >> 24) &0xFF;
+	AppData.Buffer[i++] = (timestamp_start >> 16) &0xFF;
+	AppData.Buffer[i++] = (timestamp_start >> 8) &0xFF;
+	AppData.Buffer[i++] = (timestamp_start) &0xFF;*/
+
+	AppData.Buffer[i++] = batteryLevel;
+	AppData.Buffer[i++] = ((temp_period)>>8) & 0xFF;
+	AppData.Buffer[i++] = (temp_period) & 0xFF;
+
+	for (int8_t j=0; j < nb_valeur; j++)
+	{
+	  uint16_t temp = tempe[j];
+	  uint8_t hygro = humid[j];
+	  AppData.Buffer[i++] = (temp>>8);
+	  AppData.Buffer[i++] = (temp & 0xFF);
+	  AppData.Buffer[i++] =	hygro;
+	  }
+}
+#endif
