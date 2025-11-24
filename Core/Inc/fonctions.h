@@ -44,7 +44,8 @@ typedef enum  {
 	EVENT_WATCHDOG_CHECK,
     EVENT_TIMER_24h,
     EVENT_TIMER_1min,
-	EVENT_TIMER_5min,
+    EVENT_TIMER_10min,
+	EVENT_TIMER_Tempe,
     EVENT_TIMER_20min,
 	EVENT_TIMER_LPTIM,
 	EVENT_UART_RAZ,
@@ -127,6 +128,9 @@ void watchdog_print_status(void);
 void watchdog_test_task_block(watchdog_task_id_t task_id, uint32_t duration_ms);
 void watchdog_set_context(watchdog_task_id_t task_id, watchdog_context_t context);
 uint32_t get_rtc_seconds_since_midnight(void);
+uint8_t decod_asc8 (uint8_t* index);
+uint16_t decod_asc16 (uint8_t* index);
+uint32_t decod_asc32 (uint8_t* index);
 
 // Fonctions de diagnostic du reset
 void display_reset_cause(void);

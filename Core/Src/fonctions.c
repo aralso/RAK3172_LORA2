@@ -248,11 +248,16 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 					code_erreur = ISR_callback; 		err_donnee1 = 7; }
 			}
+			if (counter % 60 == 0) {  // Toutes les 10 minutes : 0, 60, 120, 180, 240
+				event_t evt = { EVENT_TIMER_10min, 0, 0 };
+				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+					code_erreur = ISR_callback; 		err_donnee1 = 7; }
+			}
 		#endif
 
 		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
-			if (counter % 30 == 0) {  // Toutes les 5 minutes
-				event_t evt = { EVENT_TIMER_5min, 0, 0 };
+			if (counter % (temp_period/10) == 0) {  // Toutes les 30*10sec (5 minutes)
+				event_t evt = { EVENT_TIMER_Tempe, 0, 0 };
 				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 					code_erreur = ISR_callback; 		err_donnee1 = 7; }
 			}
@@ -396,14 +401,14 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 	}
 }*/
 
-// ISR pour l'appui sur le bouton PA12
+// ISR pour l'appui sur le bouton PA14
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == GPIO_PIN_12) {
+    if (GPIO_Pin == GPIO_PIN_14) {
         // ⭐ VOTRE CODE ICI - Contexte d'interruption !
 
         // ⚠️ ATTENTION : Contexte d'interruption - Code minimal !
-  	  char init_msg[] = "Bouton PA12\n\r";
+  	  char init_msg[] = "Bouton PA14\n\r";
   	  uint16_t len = strlen(init_msg);
   	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
 
@@ -1297,4 +1302,47 @@ void lptim2_schedule_ms(uint32_t delay_ms)
 	if (ticks == 0) ticks = 1;  // Minimum 1 tick
 	lptim2_program_ticks_and_enable(ticks);
 }
+
+uint8_t decod_asc8 (uint8_t* index)
+{
+	uint8_t val=0;
+	for (uint8_t i=0; i<2; i++)
+	{
+		uint8_t car = *(index+1-i);
+		if (( car >='0') && ( car <= '9'))
+				val |= ((car-'0')<<(i*4));
+		else if (( car >='A') && ( car <= 'F'))
+				val |= ((car-'A'+10)<<(i*4));
+	}
+	return val;
+}
+
+uint16_t decod_asc16 (uint8_t* index)
+{
+	uint16_t val=0;
+	for (uint8_t i=0; i<4; i++)
+	{
+		uint8_t car = *(index+1-i);
+		if (( car >='0') && ( car <= '9'))
+				val |= ((car-'0')<<(i*4));
+		else if (( car >='A') && ( car <= 'F'))
+				val |= ((car-'A'+10)<<(i*4));
+	}
+	return val;
+}
+
+uint32_t decod_asc32 (uint8_t* index)
+{
+	uint32_t val=0;
+	for (uint8_t i=0; i<8; i++)
+	{
+		uint8_t car = *(index+1-i);
+		if (( car >='0') && ( car <= '9'))
+				val |= ((car-'0')<<(i*4));
+		else if (( car >='A') && ( car <= 'F'))
+				val |= ((car-'A'+10)<<(i*4));
+	}
+	return val;
+}
+
 

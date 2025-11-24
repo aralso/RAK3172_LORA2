@@ -652,7 +652,7 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 		  //LOG_INFO("AD j:%i", j);
 
 		   if (j==3)
-			   retc = mess_enqueue(mess);
+			   retc = mess_enqueue(mess); // Vers UART
 		   if (j==6)
 		   {
 			    //HAL_Delay(10);
@@ -1056,31 +1056,38 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           err_donnee2 = message_in[0];
       }
   }
-    #ifdef Uart2    // Transfert les messages vers l'uart
-      else if ( (message_in[0] == My_Address) && (message_in[2] == '1'))  // transfert vers Uart : XL1HLH->1LHLH - message texte
-      {
-          if (longueur_m+1 < MESSAGE_SIZE)
-          {
-              memcpy (message, message_in+1, longueur_m );
-              message[0] = '1';
-              message[1] = message_in[1];
-              flag_comm_transfert=1;
-              transf_buff (longueur_m-1);
-          }
-      }
-      else if ((message_in[0] == (My_Address|0x80)) && (message_in[3] == '1'))  // transfert vers Uart : XL31HLH->1L2HLH - message longueur definie
-      {
-          if (longueur_m+1 < MESSAGE_SIZE)
-          {
-              memcpy (message, message_in+1, longueur_m );
-              message[0] = '1'+0x80;
-              message[1] = message_in[1];
-              message[2] = message_in[2]-1;
-              flag_comm_transfert=1;
-              transf_buff (longueur_m-1);
-          }
-      }
-    #endif
+  else if ( (message_in[0] == My_Address) && (message_in[2] == '1'))  // transfert vers Uart : XL1HLH->1LHLH - message texte
+	  // XL31HLH->1L2HLH - message longueur definie
+  {
+	  if (longueur_m+1 < MESS_LG_MAX)
+	  {
+		message.dest = '1';
+		message.length = longueur_m;
+		message.type = 0;
+		if (message_in[0] & 0x80) message_type=1;
+		memmove(message.data, message_in+1, longueur_m);
+		message.data[0] = '1';
+		message.data[1] = message_in[1];
+		if (message_type)  // binaire
+		{
+			message.data[2] --;  // diminution longueur
+		}
+		else  // acsii
+		{
+		}
+
+	    for (int j = 0; j < longueur_m+1; j++) {
+	        LOG_DEBUG("0x%02X ", message.data[j]);
+	    }
+	    mess_enqueue(&message);
+	  }
+  }
+  else if ((message_in[0] == (My_Address|0x80)) && (message_in[3] == '1'))  // transfert vers Uart : XL31HLH->1L2HLH - message longueur definie
+  {
+	  if (longueur_m+1 < MESS_LG_MAX)
+	  {
+	  }
+  }
   else
   {
       if (longueur_m >= MESS_LG_MAX)
@@ -1144,11 +1151,173 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                   }
               }
           }
+
+
+		// ******************************** CCCCCCCCCCCCCCCCCCC  ********************
+
+		#if CODE_TYPE == 'C'  // Chaudiere chauffage
+		if ((message_in[2] == 'C') && (message_in[3] == 'H'))  // Chaudiere
+		{
+			if (message_in[4] == 'L')  // Lecture
+			{
+				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
+				{
+                   envoie_mess_ASC(param_def, "%cCHLF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
+				}
+				if ((message_in[5] == 'A') && (longueur_m == 6))   // CHLA  Arret chauffage
+				{
+                   envoie_mess_ASC(param_def, "%cCHLA%i", message_in[1], ch_arret);
+				}
+				if ((message_in[5] == 'P') && (longueur_m == 6))   // CHLP  Planning chauffage
+				{
+					for (uint8_t i=0; i<NB_MAX_PGM; i++)
+					{
+						if (ch_debut[i] != ch_fin[i])
+							envoie_mess_ASC(param_def, "%cCHLP%i%02X%02X%i%02X%02X", message_in[1], i, \
+									ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
+					}
+				}
+
+			}
+			if (message_in[4] == 'E')  // Ecriture
+			{
+				// forcage
+				if ((message_in[5] == 'F') && (longueur_m == 16))   // CHEFddddddddcc  Forcage chauffage
+				{
+					uint8_t cons = decod_asc8(message_in+14);
+					uint32_t dur = decod_asc32(message_in+6);
+					if ((cons>50) && (cons<230) && (dur<(1<<23)))
+					{
+						forcage_duree = dur;
+						forcage_consigne = cons;
+						// Arret : bit 31  forcage_duree: 23 bits
+						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
+					}
+				}
+				if ((message_in[5] == 'A') && (longueur_m == 7))   // CHEAx  Arret chauffage
+				{
+					if (message_in[6]=='0' || message_in[6]=='1')
+					{
+						ch_arret = message_in[6] - '0';
+						// Arret : bit 31  forcage_duree: 23 bits
+						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
+					}
+				}
+				if ((message_in[5] == 'P') && (longueur_m == 16))   // CHEPxddfftccaa  Planning chauffage
+				{
+					uint8_t num = message_in[6] -'0';
+					uint8_t debut = decod_asc8(message_in+7);
+					uint8_t fin = decod_asc8(message_in+9);
+					uint8_t type = message_in[11]-'0';
+					uint8_t cons = decod_asc8(message_in+12);
+					uint8_t cons_ap = decod_asc8(message_in+14);
+
+					if ((num<NB_MAX_PGM) && (debut<145) && (fin<145) && (type<3) && (cons>=50) \
+							&& (cons<=230) && (cons_ap>=6) && (cons_ap<=64))
+					{
+						ch_debut[num] = debut;
+						ch_fin[num] = fin;
+						ch_type[num] = type;
+						ch_consigne[num] = cons;
+						ch_cons_apres[num] = cons_ap;
+
+						// 26-31:cons_ap 24-25:type 16-23:cons 8-15:fin 0-7:debut
+						EEPROM_Write32(2+num, (cons_ap<<26) | (type<<24) | (cons<<16) | (fin<<8) | debut);
+					}
+				}
+			}
+		}
+		#endif
+
+		// ******************************** HHHHHHHHHHHHHHHHHHH  ********************
+
+		if ((message_in[2] == 'H'))
+		{
+			if (message_in[3] == 'E')  // HEHhhmmss : Ecriture heure
+		  {
+				if (message_in[4] == 'H')  // HEHhhmmss : Ecriture heure
+				{
+					set_rtc_time_from_string((const char*)message_in+5);
+				}
+				if (message_in[4] == 'D')  // HEDjjmmaa : Ecriture date
+				{
+					set_rtc_date_from_string((const char*)message_in+5);
+				}
+				if (message_in[4] == 'S')  // HESxxxx : Ecriture date-heure avec timestamp 32bits
+					// 0xB1 6 72 69 83 104 229 1 0
+				{
+					uint32_t timestamp;
+					memcpy(&timestamp, message_in + 5, 4);
+					LOG_INFO("HES:Timestamp: %08X", timestamp);
+					set_rtc_from_timestamp(timestamp);
+				}
+		  }
+			if (message_in[3] == 'L')
+		  {
+			if (message_in[4] == 'H')  // 1HLH : Lecture Heure
+			  {
+				display_current_time();
+			  }
+		  }
+		}
+
+		// ******************************** LLLLLLLLLLLLLLLLLLLL  ********************
+
+		if ((message_in[2] == 'L') && (message_in[3] == 'O'))  // log_flash
+		{
+			if ( (message_in[4] =='R')  && (message_in[5] =='a') &&  (message_in[6] =='z')
+				  && (longueur_m==7))  // Force effacement page Log 1LORaz
+			{
+			  LOG_Format();
+			}
+			if ( (message_in[4] =='S')   && (longueur_m==5))  // Log:stats 1LOS
+			{
+			  uint32_t total_entries, free_space;
+			  log_get_stats(&total_entries, &free_space);
+			}
+			if ( (message_in[4] =='E')  && (message_in[5] =='E') &&  (message_in[6] =='Z')
+				  && (longueur_m==7))                   // Force effacement page eeprom 1LOEEZ
+			{
+			  EEPROM_Format();
+			}
+			if ( (message_in[4] =='E') && (message_in[5] =='E') &&(longueur_m==6))  // EEprom:stats 1LOEE
+			{
+			  uint32_t total_entries, free_space;
+			  EEPROM_GetStats(&total_entries, &free_space);
+			}
+		}
+
+		// ******************************** OOOOOOOOOOOOOOOOOO  ********************
+
+		if ((message_in[2] == 'O'))            // OK
+		{
+			  //LOG_INFO("AAA%i", longueur_m);
+			  if ((message_in[3] == 'K') && (message_in[4] == 'K')) //OKK....
+				  LOG_INFO("recu:%s", message_in);
+		}
+
+		// ******************************** RRRRRRRRRRRRRRRRRRR  ********************
+
+          if ((message_in[2] == 'R') && (message_in[3] == 'L'))   // RL : Lecture Radio
+          {
+              if ((message_in[4] == 'S') && (message_in[5] == 'I'))   // RLSI : Lecture Radio RSSI (recu du concent)
+              {
+            	  // envoi à l'uart du end_node
+        		  LOG_INFO("RSSI:%s node:%i", message_in, nodes[0].latestRssi);
+
+              }
+          }
+
+          // ******************************** SSSSSSSSSSSSSSSSSS  ********************
+
           if ((message_in[2] == 'S') && (message_in[3] == 'L'))   // SL : Lecture Statut
           {
               if ( (message_in[4] =='O')  && (longueur_m==5))  // 1SLO
               {
-                  envoie_mess_ASC(param_def, "1OKK");
+            	  uint8_t node_id = Node_id(message_in[1]);
+            	  if (node_id) node_id--;
+            	  int8_t rssi = nodes[node_id].latestRssi;
+                  envoie_mess_ASC(param_def, "%cRLSI %i", message_in[1], rssi);
               }
               if ( (message_in[4] =='V')  && (longueur_m==5))  // 1SLV : version-type
               {
@@ -1205,9 +1374,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               }
           }
 
-          if ((message_in[2] == 'O'))  // OK
-        	  if (message_in[3] == 'K')
-        		  LOG_INFO("mess og recu");
+          // ********************************   TTTTTTTTTTTTTTTTTT  ********************
 
           if ((message_in[2] == 'T') && (message_in[3] == 'L'))  //  TL  test
           {
@@ -1339,59 +1506,6 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		      }
           }
 
-          if ((message_in[2] == 'H'))
-          {
-          	if (message_in[3] == 'E')  // HEHhhmmss : Ecriture heure
-            {
-				if (message_in[4] == 'H')  // HEHhhmmss : Ecriture heure
-				{
-					set_rtc_time_from_string((const char*)message_in+5);
-				}
-				if (message_in[4] == 'D')  // HEDjjmmaa : Ecriture date
-				{
-					set_rtc_date_from_string((const char*)message_in+5);
-				}
-				if (message_in[4] == 'S')  // HESxxxx : Ecriture date-heure avec timestamp 32bits
-					// 0xB1 6 72 69 83 104 229 1 0
-				{
-					uint32_t timestamp;
-					memcpy(&timestamp, message_in + 5, 4);
-					LOG_INFO("HES:Timestamp: %08X", timestamp);
-					set_rtc_from_timestamp(timestamp);
-				}
-            }
-        	if (message_in[3] == 'L')
-            {
-            	if (message_in[4] == 'H')  // 1HLH : Lecture Heure
-                {
-            		display_current_time();
-                }
-            }
-          }
-
-          if ((message_in[2] == 'L') && (message_in[3] == 'O'))  // log_flash
-          {
-		      if ( (message_in[4] =='R')  && (message_in[5] =='a') &&  (message_in[6] =='z')
-		    		  && (longueur_m==7))  // Force effacement page Log 1LORaz
-		      {
-		    	  LOG_Format();
-		      }
-		      if ( (message_in[4] =='S')   && (longueur_m==5))  // Log:stats 1LOS
-		      {
-		    	  uint32_t total_entries, free_space;
-		    	  log_get_stats(&total_entries, &free_space);
-		      }
-		      if ( (message_in[4] =='E')  && (message_in[5] =='E') &&  (message_in[6] =='Z')
-		    		  && (longueur_m==7))                   // Force effacement page eeprom 1LOEEZ
-		      {
-		    	  EEPROM_Format();
-		      }
-		      if ( (message_in[4] =='E') && (message_in[5] =='E') &&(longueur_m==6))  // EEprom:stats 1LOEE
-		      {
-		    	  uint32_t total_entries, free_space;
-		    	  EEPROM_GetStats(&total_entries, &free_space);
-		      }
-         }
       }
   }
 }

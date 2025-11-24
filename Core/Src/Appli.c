@@ -10,7 +10,7 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
- v1.9 11/2025 : process LORA RX-TX
+ v1.9 11/2025 : process LORA RX-TX, hdc1080, vbat_vtempInt
  v1.8 10/2025 : envoi subghz ok
  v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
@@ -41,7 +41,7 @@ Conso en MSI_range8 et HSI : 1,33mA
 #include <stdio.h>    // Pour sprintf
 #include <string.h>   // Pour strlen
 #include <stdarg.h>   // Pour va_list (si vous utilisez print_log)
-
+#include "hdc1080.h"
 
 extern TimerHandle_t HTimer_24h;
 extern TimerHandle_t HTimer_20min;
@@ -71,6 +71,7 @@ uint8_t mess_pay[100];
 	uint8_t num_val_temp;
 	uint16_t tempe[MAX_SENS];
 	uint8_t humid[MAX_SENS];
+	uint16_t temp_period;
 #endif
 
 /* Definitions for LORA_RX_Task */
@@ -95,11 +96,27 @@ const osThreadAttr_t Appli_Task_attributes = {
   .stack_size = 600 * 4
 };
 
+#if CODE_TYPE == 'C'   // Moteur chaudière
+	uint8_t ch_debut[NB_MAX_PGM];   // debut de chauffe :heure par pas de 10 minutes
+	uint8_t ch_fin[NB_MAX_PGM];   // fin de chauffe
+	uint8_t ch_type[NB_MAX_PGM];     // 0:tous les jours, 1:semaine, 2:week-end (2 bits)
+	uint8_t ch_consigne[NB_MAX_PGM];  // 5° à 23°C, par pas de 0,1°C
+	uint8_t ch_cons_apres[NB_MAX_PGM];  // 3° à 23°C, par pas de 0,5°C (6 bits)
+	uint32_t forcage_duree;    // par pas de 10 min 1/1/2020=0 (sur 23bits)
+	uint8_t forcage_consigne;  // 0 à 23°C
+	uint8_t consigne_actuelle;
+	uint8_t consigne_apres;
+	uint8_t ch_arret; // 1 bit
+#endif
+
 void LORA_RXTsk(void *argument);
 void LORA_TXTsk(void *argument);
 void Appli_Tsk(void *argument);
-uint8_t mesure_temp(uint16_t* temp, uint8_t* hygro);
-
+void envoi_data (uint8_t nb_valeur);
+uint8_t GetBatteryLevel(void);
+uint16_t BSP_RAK5005_GetBatteryLevel(void);
+uint8_t GetInternalTemp(void);
+uint32_t BSP_ADC_ReadChannels(uint32_t channel);
 
 void init1()  // avant KernelInitialize
 {
@@ -134,6 +151,9 @@ void init1()  // avant KernelInitialize
       /* Disable autoreload write complete interrupt */
       __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
 
+	#if CODE_TYPE == 'B'
+      temp_period = TEMP_PERIOD;
+	#endif
 }
 
 void init2()  // création queue, timer, semaphore
@@ -196,6 +216,15 @@ void init3()   // taches
 // Apres KernelStart, dans Appli_task
 void init4(void)
 {
+  #if CODE_TYPE == 'C'
+	consigne_actuelle = 19*10;
+	ch_debut[0] = 6*6;
+	ch_fin[0] = 22*6;
+	ch_consigne[0] = 20*10;
+	ch_cons_apres[0] = 16*10;
+	// TODO lire EEPROM
+  #endif
+
     init_functions4();  // watchdog, Log, eeprom
 
     MX_SubGHz_Phy_Init();
@@ -744,14 +773,50 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 
-				case EVENT_TIMER_1min: { // moteur
+				case EVENT_TIMER_1min: { // PID -> vanne 3 voies
 					LOG_INFO("timer 1min");
 					break;
 				}
-				case EVENT_TIMER_5min: {  // Thermometre
-					LOG_INFO("timer 5min");
+
+				case EVENT_TIMER_10min: { // chaque 10 min : chgt de consigne
+					LOG_INFO("timer 10min");
+
+
+					if (!ch_arret)
+					{
+						RTC_TimeTypeDef sTime;
+						RTC_DateTypeDef sDate;
+						HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+						HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+						uint8_t tps_actuel = sTime.Hours*6 + sTime.Minutes/10;
+						uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
+						if (forcage_duree <= date_actuel)
+						{
+							uint8_t valid = 0;
+							for (uint8_t i=0; i<NB_MAX_PGM; i++)
+							{
+								if (ch_debut[i] != ch_fin[i])
+								{
+									if ((tps_actuel >= ch_debut[i]) && (tps_actuel <= ch_fin[i]))
+									{
+										valid=1;
+										consigne_actuelle = ch_consigne[i];
+										consigne_apres = ch_cons_apres[i];
+									}
+								}
+							}
+							if (!valid) consigne_actuelle = consigne_apres;
+						}
+					}
+
+					break;
+				}
+
+
+				case EVENT_TIMER_Tempe: {  // Thermometre-hygro
+					LOG_INFO("timer mesure temp-hygro 5min");
 					#if CODE_TYPE == 'B'
-						uint8_t ret = mesure_temp(&temp, &hygro);
+						uint8_t ret = HDC1080_read_tempe_humid(&temp, &hygro);
 						if (ret)
 						{
 							LOG_INFO("erreur_temp:%i", ret);
@@ -777,7 +842,13 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
-					LOG_INFO("timer 20s");
+					uint8_t Vbat = GetBatteryLevel();
+					uint16_t mvolt = Vbat*4+2600;
+
+
+					LOG_INFO("timer 20s batt:%i %i", Vbat, mvolt);
+
+					GetInternalTemp();
 
 					#ifdef END_NODE
 						cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
@@ -891,39 +962,95 @@ void assert_failed(const char *file, int line)
 /* USER CODE END Callback 1 */
 }
 
-uint8_t mesure_temp(uint16_t* temp, uint8_t* hygro)
-{
-	*temp=10;
-	*hygro = 52;
-	return 0;
-}
 
 #if CODE_TYPE == 'B'
 void envoi_data (uint8_t nb_valeur)
+// 14 Octets pour 1 valeur
 {
     uint8_t batteryLevel = GetBatteryLevel();
    	LOG_INFO("Batt VDDA: %d\r\n", batteryLevel);
 
-	AppData.Buffer[i++] = TYPE_DEVICE;  // 2:capteur temperature STM32
-	AppData.Buffer[i++] = 0x41;  // code fonction
-	AppData.Buffer[i++] = nb_valeur*3+4;  // longueur des données
-	AppData.Buffer[i++] = 0;   // historique
-	/*AppData.Buffer[i++] = (timestamp_start >> 24) &0xFF;
-	AppData.Buffer[i++] = (timestamp_start >> 16) &0xFF;
-	AppData.Buffer[i++] = (timestamp_start >> 8) &0xFF;
-	AppData.Buffer[i++] = (timestamp_start) &0xFF;*/
+   	message.dest = '1'; // uart
+   	message.type = 1;  // binaire
 
-	AppData.Buffer[i++] = batteryLevel;
-	AppData.Buffer[i++] = ((temp_period)>>8) & 0xFF;
-	AppData.Buffer[i++] = (temp_period) & 0xFF;
+   	message.data[0] = message.dest | 0x80;
+   	uint8_t i=2;
+	message.data[i++] = 'C';  // Capteur
+	message.data[i++] = 'V';  // Valeur
+	message.data[i++] = CODE_TYPE;  // 2:capteur temperature STM32
+	message.data[i++] = 0x41;  // code fonction : Hist, Temp-humid sans timestamp
+	message.data[i++] = nb_valeur*3+4;  // longueur des données
+	/*message.data[i++] = (timestamp_start >> 24) &0xFF;
+	message.data[i++] = (timestamp_start >> 16) &0xFF;
+	message.data[i++] = (timestamp_start >> 8) &0xFF;
+	message.data[i++] = (timestamp_start) &0xFF;*/
+
+	message.data[i++] = batteryLevel;
+	message.data[i++] = ((temp_period)>>8) & 0xFF;
+	message.data[i++] = (temp_period) & 0xFF;
 
 	for (int8_t j=0; j < nb_valeur; j++)
 	{
-	  uint16_t temp = tempe[j];
-	  uint8_t hygro = humid[j];
-	  AppData.Buffer[i++] = (temp>>8);
-	  AppData.Buffer[i++] = (temp & 0xFF);
-	  AppData.Buffer[i++] =	hygro;
+	  message.data[i++] = (tempe[j]>>8);
+	  message.data[i++] = (tempe[j] & 0xFF);
+	  message.data[i++] =	humid[j];
 	  }
+	message.data[1] = i-3; // longueur
+	envoie_mess_bin(&message);
 }
 #endif
+
+#ifdef END_NODE
+#if CODE_TYPE == 'B'
+/*void  lect()
+{
+   buf[0] = REG_TEMP;
+
+   ret = HAL_I2C_Master_Transmit(&hi2c1, TMP102_ADDR, buf, 1, HAL_MAX_DELAY);
+   if ( ret != HAL_OK ) {
+     strcpy((char*)buf, "Error Tx\r\n");
+   } else {
+
+     // Read 2 bytes from the temperature register
+     ret = HAL_I2C_Master_Receive(&hi2c1, TMP102_ADDR, buf, 2, HAL_MAX_DELAY);
+     if ( ret != HAL_OK ) {
+       strcpy((char*)buf, "Error Rx\r\n");
+     } else {
+
+       //Combine the bytes
+       val = ((int16_t)buf[0] << 4) | (buf[1] >> 4);
+
+       // Convert to 2's complement, since temperature can be negative
+       if ( val > 0x7FF )      val |= 0xF000;
+
+       // Convert to float temperature value (Celsius)
+       temp_c = val * 0.0625;
+
+       // Convert temperature to decimal format
+       temp_c *= 100;
+       sprintf((char*)buf, "%u.%u C\r\n",((unsigned int)temp_c / 100),((unsigned int)temp_c % 100));
+     }
+   }
+   // Send out buffer (temperature or error message)
+   HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+}*/
+#endif
+#endif
+
+uint8_t GetBatteryLevel(void)
+{
+	uint16_t batt_mv = BSP_RAK5005_GetBatteryLevel();
+	LOG_INFO("niveau batt : %i mv", batt_mv);
+	// 2600:0  3300:255
+	if (batt_mv>2600)
+		return ((uint8_t) ((batt_mv-2600)/4));
+	else
+		return 0;
+}
+
+uint8_t GetInternalTemp(void)
+{
+	uint16_t int_Temp = BSP_ADC_ReadChannels(ADC_CHANNEL_TEMPSENSOR);
+	LOG_INFO("Temp interne : %i", int_Temp);
+	return (uint8_t)int_Temp;
+}

@@ -861,6 +861,9 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 				nodes[node_id].latestRssi = rssi;
 				nodes[node_id].nb_recus++;
 			}
+		#else
+			nodes[0].latestRssi = rssi;
+			nodes[0].nb_recus++;
 		#endif
 
 		if (len==2 && payload[5]=='A' && payload[6]=='C')  // Ack recu

@@ -19,18 +19,19 @@
 #define ID_CONCENTRATOR	'H'
 
 #define CODE_VERSION  "1.9"
-#define CODE_TYPE 'A'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
+#define CODE_TYPE 'C'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
 
-//#define END_NODE   // sinon #define CONCENTRATOR
+#define END_NODE   // sinon #define CONCENTRATOR
 
 #ifdef END_NODE
 	#if CODE_TYPE == 'A'
 		#define My_Address 'U'
-		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
+		#define CLASS LORA_CLASS_C  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 	#elif CODE_TYPE == 'B' // Garches chaudiere Thermometre
 		#define My_Address 'I'
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 		#define MAX_SENS 20
+		#define TEMP_PERIOD	30  // 30 secondes
 	#elif CODE_TYPE == 'C' // Garches chaudiere Moteur
 		#define My_Address 'J'
 		#define CLASS LORA_CLASS_C  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
@@ -41,9 +42,24 @@
 #endif
 
 
+#if CODE_TYPE == 'C'   // Moteur chaudière
+	#define NB_MAX_PGM 3
+	extern uint8_t ch_debut[];   // debut de chauffe :heure par pas de 10 minutes
+	extern uint8_t ch_fin[];   // fin de chauffe
+	extern uint8_t ch_type[];     // 0:tous les jours, 1:semaine, 2:week-end (2 bits)
+	extern uint8_t ch_consigne[];  // 5° à 23°C, par pas de 0,1°C
+	extern uint8_t ch_cons_apres[];  // 3° à 23°C, par pas de 0,5°C (6 bits)
+	extern uint32_t forcage_duree;    // par pas de 10 min 1/1/2020=0 (sur 23bits)
+	extern uint8_t forcage_consigne;  // 0 à 23°C
+	extern uint8_t consigne_actuelle;
+	extern uint8_t consigne_apres;
+	extern uint8_t ch_arret; // 1 bit
+#endif
+
 extern uint8_t test_val;
 extern RTC_HandleTypeDef hrtc;
 extern uint8_t mess_pay[100];
+extern 	uint16_t temp_period;
 
 
 #endif /* INC_APPLI_H_ */

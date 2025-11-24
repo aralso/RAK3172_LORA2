@@ -178,7 +178,7 @@ uint32_t TIMER_IF_GetTimerContext(void)
 
 uint32_t TIMER_IF_GetTimerElapsedTime(void)
 {
-  //uint32_t ret = 0;
+  uint32_t ret = 0;
   /* USER CODE BEGIN TIMER_IF_GetTimerElapsedTime */
   uint32_t now = HAL_LPTIM_ReadCounter(&hlptim3);
     // Gestion du wrap-around
@@ -188,7 +188,7 @@ uint32_t TIMER_IF_GetTimerElapsedTime(void)
       return (0xFFFF - RtcTimerContext) + now + 1;  // 16 bits LPTIM
     }
   /* USER CODE END TIMER_IF_GetTimerElapsedTime */
-  //return ret;
+  return ret;
 }
 
 uint32_t TIMER_IF_GetTimerValue(void)

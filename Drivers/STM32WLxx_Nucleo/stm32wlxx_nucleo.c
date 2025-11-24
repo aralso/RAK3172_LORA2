@@ -243,7 +243,7 @@ __weak void BSP_PB_Callback(Button_TypeDef Button)
 /*
  *
  */
-static uint32_t
+uint32_t
 BSP_ADC_ReadChannels(uint32_t channel)
 {
   uint32_t ADCxConvertedValues = 0;
@@ -290,7 +290,7 @@ BSP_RAK5005_GetBatteryLevel(void)
   uint16_t batteryLevelmV = 0;
   uint32_t measuredLevel = 0;
 
-  measuredLevel = BSP_ADC_ReadChannels(ADC_CHANNEL_2);
+  measuredLevel = BSP_ADC_ReadChannels(ADC_CHANNEL_VBAT);  // ou ADC_CHANNEL_VBAT ou ADC_CHANNEL_2
 
   if (measuredLevel == 0) {
     batteryLevelmV = 0;
