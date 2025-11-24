@@ -6,7 +6,7 @@
 
 
  TODO :
-, adresses LORA/Uart
+, bug get_battery_level
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
@@ -41,10 +41,13 @@ Conso en MSI_range8 et HSI : 1,33mA
 #include <stdio.h>    // Pour sprintf
 #include <string.h>   // Pour strlen
 #include <stdarg.h>   // Pour va_list (si vous utilisez print_log)
+#include <math.h>
 #include "hdc1080.h"
 
 extern TimerHandle_t HTimer_24h;
 extern TimerHandle_t HTimer_20min;
+extern TimerHandle_t HTimer_M3voies;
+
 extern osThreadId_t Uart_RX_TaskHandle;
 extern osThreadId_t Uart_TX_TaskHandle;
 
@@ -73,6 +76,7 @@ uint8_t mess_pay[100];
 	uint8_t humid[MAX_SENS];
 	uint16_t temp_period;
 #endif
+
 
 /* Definitions for LORA_RX_Task */
 osThreadId_t LORA_RX_TaskHandle;
@@ -107,7 +111,11 @@ const osThreadAttr_t Appli_Task_attributes = {
 	uint8_t consigne_actuelle;
 	uint8_t consigne_apres;
 	uint8_t ch_arret; // 1 bit
-#endif
+	float pos_prec;
+	uint8_t init_attente;
+	uint8_t cpt_circulateur;
+	uint16_t Tint;
+	#endif
 
 void LORA_RXTsk(void *argument);
 void LORA_TXTsk(void *argument);
@@ -117,6 +125,7 @@ uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);
 uint8_t GetInternalTemp(void);
 uint32_t BSP_ADC_ReadChannels(uint32_t channel);
+void calcul_pid_vanne(void);
 
 void init1()  // avant KernelInitialize
 {
@@ -175,6 +184,16 @@ void init2()  // création queue, timer, semaphore
 
 void init3()   // taches
 {
+
+    // Configurer le RTC (sans calculer le jour de la semaine)
+    RTC_DateTypeDef sDate = {0};
+    sDate.WeekDay = 1;  // Lundi par défaut (ou jour fixe)
+    sDate.Month = 11;
+    sDate.Date = 24;
+    sDate.Year = 25;  // RTC stocke l'année - 2000
+
+    HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
     /* creation of LORA_RX_Task */
     //LORA_RX_TaskHandle = osThreadNew(LORA_RXTsk, NULL, &LORA_RX_Task_attributes);
 
@@ -222,7 +241,34 @@ void init4(void)
 	ch_fin[0] = 22*6;
 	ch_consigne[0] = 20*10;
 	ch_cons_apres[0] = 16*10;
+	test_var = 190;
+	ch_arret = 1;
+
 	// TODO lire EEPROM
+
+	// init circulateur
+	if (ch_arret)  // arret
+		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
+	else  // marche
+		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
+
+	// ferme la vanne : 140 secondes en fermeture
+	pos_prec = 0.0;
+	HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_SET);
+
+	TickType_t ticks = pdMS_TO_TICKS((uint32_t)(FULL_TRAVEL_TIME * 1000.0f));
+	xTimerChangePeriod(HTimer_M3voies, ticks, 0); // Change la durée
+	xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
+
+	init_attente=3;
+
+	PIDd_Init(&myPID,
+	              2.0f,       // Kp
+	              60.0f,      // Ti (minutes)
+	              0.0f,       // Td (minutes)
+	              1.0f,      // dt = 1 minute
+	              0.0f, 100.0f);
   #endif
 
     init_functions4();  // watchdog, Log, eeprom
@@ -760,6 +806,7 @@ void Appli_Tsk(void *argument)
 				case EVENT_WATCHDOG_CHECK: {
 					HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
 				    watchdog_check_all_tasks(); // test watdchdog logiciel
+					//LOG_INFO("Refresh watchdog");
 				    break;
 				}
 				case EVENT_TIMER_24h: {
@@ -773,45 +820,59 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 
-				case EVENT_TIMER_1min: { // PID -> vanne 3 voies
-					LOG_INFO("timer 1min");
-					break;
-				}
-
-				case EVENT_TIMER_10min: { // chaque 10 min : chgt de consigne
-					LOG_INFO("timer 10min");
-
-
-					if (!ch_arret)
-					{
-						RTC_TimeTypeDef sTime;
-						RTC_DateTypeDef sDate;
-						HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-						HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-						uint8_t tps_actuel = sTime.Hours*6 + sTime.Minutes/10;
-						uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
-						if (forcage_duree <= date_actuel)
-						{
-							uint8_t valid = 0;
-							for (uint8_t i=0; i<NB_MAX_PGM; i++)
-							{
-								if (ch_debut[i] != ch_fin[i])
-								{
-									if ((tps_actuel >= ch_debut[i]) && (tps_actuel <= ch_fin[i]))
-									{
-										valid=1;
-										consigne_actuelle = ch_consigne[i];
-										consigne_apres = ch_cons_apres[i];
-									}
-								}
-							}
-							if (!valid) consigne_actuelle = consigne_apres;
-						}
+				#if CODE_TYPE == 'C'  // Chaudiere chauffage
+					case EVENT_TIMER_1min: { // PID -> vanne 3 voies
+						LOG_INFO("timer 1min");
+						HAL_Delay(1000);
+						if (init_attente) init_attente--;
+						if (!init_attente)
+							calcul_pid_vanne();
+						break;
 					}
 
-					break;
-				}
+					case EVENT_TIMER_3Voies: {  // fin du timer de modif vanne 3 voie
+						LOG_INFO("fin mouvement 3 voies");
+						break;
+					}
 
+					case EVENT_TIMER_10min: { // chaque 10 min : chgt de consigne
+						LOG_INFO("timer 10min");
+						HAL_Delay(1000);
+
+
+						if (!ch_arret)
+						{
+							RTC_TimeTypeDef sTime;
+							RTC_DateTypeDef sDate;
+							HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+							HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+							uint8_t tps_actuel = sTime.Hours*6 + sTime.Minutes/10;
+							uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
+							LOG_INFO("forcage:actuel%i fin:%i", date_actuel, forcage_duree);
+							if (forcage_duree <= date_actuel)
+							{
+								forcage_duree = 0;
+								LOG_INFO("pas de forcage");
+								uint8_t valid = 0;
+								for (uint8_t i=0; i<NB_MAX_PGM; i++)
+								{
+									if (ch_debut[i] != ch_fin[i])
+									{
+										if ((tps_actuel >= ch_debut[i]) && (tps_actuel <= ch_fin[i]))
+										{
+											valid=1;
+											consigne_actuelle = ch_consigne[i];
+											consigne_apres = ch_cons_apres[i];
+										}
+									}
+								}
+								if (!valid) consigne_actuelle = consigne_apres;
+							}
+						}
+
+						break;
+					}
+				#endif
 
 				case EVENT_TIMER_Tempe: {  // Thermometre-hygro
 					LOG_INFO("timer mesure temp-hygro 5min");
@@ -842,13 +903,13 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_20min: {
 
 					//LOG_INFO("a");
-					uint8_t Vbat = GetBatteryLevel();
-					uint16_t mvolt = Vbat*4+2600;
+					//uint8_t Vbat = GetBatteryLevel();
+					//uint16_t mvolt = Vbat*4+2600;
 
 
-					LOG_INFO("timer 20s batt:%i %i", Vbat, mvolt);
+					//LOG_INFO("timer 20s batt:%i %i", Vbat, mvolt);
 
-					GetInternalTemp();
+					/*GetInternalTemp();
 
 					#ifdef END_NODE
 						cpt_timer20s++;  // 1(20s), 3(1min), 6(2min)
@@ -861,7 +922,7 @@ void Appli_Tsk(void *argument)
 							if (cpt_message==4) param_def = 0x20;  // 0x30:sans ack, RX apres
 							//envoie_mess_ASC(param_def, "HTTT%i", cpt_message);
 						}
-					#endif
+					#endif*/
 					//LOG_INFO("Entrée en mode Stop avec HSI...");
 					/*char init_msg[] = "mode stop\n\r";
 					  uint16_t len = strlen(init_msg);
@@ -1054,3 +1115,80 @@ uint8_t GetInternalTemp(void)
 	LOG_INFO("Temp interne : %i", int_Temp);
 	return (uint8_t)int_Temp;
 }
+
+#if CODE_TYPE == 'C'  // Chaudiere - chauffage
+void calcul_pid_vanne(void)
+{
+	// calcul PID
+	float temp_int = ((float)Tint)/10.0;     // mesure
+	float fl_consigne = ((float) consigne_actuelle)/10.0;     // référence
+
+	float position = PIDd_Compute(&myPID, fl_consigne, temp_int);
+
+	LOG_INFO("PID:cons:%i temp:%i prec:%i fut:%i", consigne_actuelle, test_var, (uint16_t)(pos_prec*10), (uint16_t)(position*10));
+
+	if ((!position) && (!pos_prec))
+	{
+		LOG_INFO("vanne fermee %i", cpt_circulateur);
+		if (cpt_circulateur < 10)
+		{
+			cpt_circulateur++;
+			if (cpt_circulateur == 10)  // arret circulateur
+			{
+				ch_arret=1;
+				HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
+			}
+		}
+	}
+	else if (ch_arret)
+	{
+		ch_arret=0;
+		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
+	}
+
+	// si écart significatif => modif vanne 3 voies
+	if (fabsf(position - pos_prec) < DEADBAND_PERCENT) {
+		LOG_INFO("Pas de mouvement");
+        return;
+	}
+	uint8_t action_time = (uint8_t) (fabsf(position - pos_prec) * FULL_TRAVEL_TIME / 100.0f);
+
+	if (action_time > WINDOW_TIME)
+	{
+		action_time = WINDOW_TIME-3;
+		LOG_INFO("limit action time %i", action_time);
+	}
+	else
+		LOG_INFO("ok action time %i %i", action_time, WINDOW_TIME);
+
+	if (position > pos_prec)
+	{   // ouverture vanne
+
+			LOG_INFO("Etat:%i Ouverture pendant %isec etat:%i", (uint16_t)(pos_prec*10), action_time, (uint16_t)(position*10));
+
+			// Active moteur ouverture
+			HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_SET);
+
+			TickType_t ticks = pdMS_TO_TICKS((uint32_t)(action_time * 1000.0f));
+
+			xTimerChangePeriod(HTimer_M3voies, ticks, 0); // Change la durée
+			xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
+	}
+	else
+	{   // fermeture vanne
+
+			LOG_INFO("Etat:%i Fermeture pendant %isec etat:%i", (uint16_t)(pos_prec*10), action_time, (uint16_t)(position*10));
+
+			// Active moteur fermeture
+			HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_SET);
+
+			TickType_t ticks = pdMS_TO_TICKS((uint32_t)(action_time * 1000.0f));
+
+			xTimerChangePeriod(HTimer_M3voies, ticks, 0); // Change la durée
+			xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
+	}
+	pos_prec = position;
+}
+#endif

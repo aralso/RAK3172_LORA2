@@ -483,7 +483,7 @@ void reception_message_Uart2(in_message_t *msg)
 	if (msg->type == 0)
 	{
 		// Message ASCII
-		LOG_INFO("Received ASCII message: %.*s", msg->length, msg->data);
+		//LOG_INFO("Received ASCII message: %.*s", msg->length, msg->data);
 		//LOG_INFO("Received ASCII message: %s lg:%d", msg->data, msg->length);
 	}
 	else
@@ -619,7 +619,7 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 	uint8_t destinataire, i, j, retc;
 	retc=1;
 
-	LOG_INFO("envoi routage dest:%c lg:%i %s", mess->dest, mess->length, mess->data);
+	//LOG_INFO("envoi routage dest:%c lg:%i %s", mess->dest, mess->length, mess->data);
 
 	destinataire = mess->dest;
 
@@ -808,7 +808,9 @@ void Uart_TX_Tsk(void *argument)
         // Enregistrer un heartbeat pour le watchdog
         watchdog_task_heartbeat(WATCHDOG_TASK_UART_TX);
         
+        watchdog_set_context(WATCHDOG_TASK_UART_TX, WATCHDOG_CONTEXT_WAITING);
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        watchdog_set_context(WATCHDOG_TASK_UART_TX, WATCHDOG_CONTEXT_ACTIVE);
 
         while (1)
         {
@@ -1160,6 +1162,10 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		{
 			if (message_in[4] == 'L')  // Lecture
 			{
+				if ((message_in[5] == 'S') && (longueur_m == 6))   // CHLS  Lecture Statut
+				{
+                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i Cons_ap:%i 3V:%i", message_in[1], consigne_actuelle, Tint, consigne_apres, (uint16_t)(pos_prec) );
+				}
 				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
 				{
                    envoie_mess_ASC(param_def, "%cCHLF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
@@ -1181,14 +1187,28 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			}
 			if (message_in[4] == 'E')  // Ecriture
 			{
+				// temperature interieure
+				if ((message_in[5] == 'T') && (longueur_m == 10))   // CHETxx  Temperature interieure
+				{
+					uint16_t TempI = decod_asc8(message_in+6); // 5° à 25°
+					if ((TempI>=50) && (TempI<=250))
+						Tint = TempI;
+				}
 				// forcage
 				if ((message_in[5] == 'F') && (longueur_m == 16))   // CHEFddddddddcc  Forcage chauffage
 				{
 					uint8_t cons = decod_asc8(message_in+14);
 					uint32_t dur = decod_asc32(message_in+6);
+					LOG_INFO("CHEF:lg:%i cons:%i duree:%i", longueur_m, cons, dur);
 					if ((cons>50) && (cons<230) && (dur<(1<<23)))
 					{
-						forcage_duree = dur;
+						RTC_TimeTypeDef sTime;
+						RTC_DateTypeDef sDate;
+						HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+						HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+						uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
+						LOG_INFO("actuel:%i", date_actuel);
+						forcage_duree = dur + date_actuel;
 						forcage_consigne = cons;
 						// Arret : bit 31  forcage_duree: 23 bits
 						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
@@ -1201,16 +1221,22 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 						ch_arret = message_in[6] - '0';
 						// Arret : bit 31  forcage_duree: 23 bits
 						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
+						if (ch_arret)  // arret
+							HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
+						else  // marche
+							HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
 					}
 				}
 				if ((message_in[5] == 'P') && (longueur_m == 16))   // CHEPxddfftccaa  Planning chauffage
-				{
+				{  //
 					uint8_t num = message_in[6] -'0';
 					uint8_t debut = decod_asc8(message_in+7);
 					uint8_t fin = decod_asc8(message_in+9);
 					uint8_t type = message_in[11]-'0';
 					uint8_t cons = decod_asc8(message_in+12);
 					uint8_t cons_ap = decod_asc8(message_in+14);
+
+					LOG_INFO("CHEP:lg:%i num:%i deb:%i fin:%i t:%i cons:%i cons_ap:%i", longueur_m, num, debut, fin, type, cons, cons_ap);
 
 					if ((num<NB_MAX_PGM) && (debut<145) && (fin<145) && (type<3) && (cons>=50) \
 							&& (cons<=230) && (cons_ap>=6) && (cons_ap<=64))
@@ -1495,6 +1521,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  {
 				  uint8_t ret = mess_LORA_suppression_milieu(message_in[5]-'0', message_in[6]-'0');
 				 LOG_INFO("supp %i", ret);
+			  }
+			  if ( (message_in[4] =='Z')  && (longueur_m==7))  // TEZxx : valeur test_var
+			  {
+				  test_var = decod_asc8(message_in+5);
+				  LOG_INFO("val:%i", test_var);
 			  }
 
           }

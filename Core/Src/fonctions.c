@@ -36,6 +36,8 @@ uint8_t erreurs_4_fois[nb_erreurs_4_fois/4];       // Nb d'erreurs dÃ©ja envoy
 
 uint8_t nb_reset=0;
 
+PID_t myPID;
+
 uint8_t test_index;
 uint8_t test_var;
 uint32_t test_tab[test_MAX];
@@ -68,12 +70,15 @@ static const char* watchdog_task_names[WATCHDOG_TASK_COUNT] = {
 TimerHandle_t HTimer_24h;
 TimerHandle_t HTimer_20min;
 TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du watchdog
+TimerHandle_t HTimer_M3voies;
+
 
 void SystemClock_Config(void);
 
 //static void WatchdogTimerCallback(TimerHandle_t xTimer);
 //static void Timer24hCallback(TimerHandle_t xTimer);
 //static void Timer20minCallback(TimerHandle_t xTimer);
+void M3VoiesCallback(TimerHandle_t xTimer);
 
 void configure_uart_wakeup(void)
 {
@@ -88,6 +93,16 @@ void init_functions1(void)
 // Apres KernelInitialize : queue, mutex, timers
 void init_functions2(void)
 {
+	#if CODE_TYPE == 'C'
+		// Créer le timer de pilotage de la vanne 3 voies
+		HTimer_M3voies = xTimerCreate(
+			"M3VoiesTimer",                    // Nom
+			pdMS_TO_TICKS(1000), // Période 1 seconde
+			pdFALSE,                            // Auto-reload
+			(void*)0,                          // ID
+			M3VoiesCallback              // Callback
+		);
+	#endif
 
 	// creation timers
 	 /*HTimer_24h = xTimerCreate(
@@ -248,7 +263,7 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 					code_erreur = ISR_callback; 		err_donnee1 = 7; }
 			}
-			if (counter % 60 == 0) {  // Toutes les 10 minutes : 0, 60, 120, 180, 240
+			if (counter % 5 == 0) {  // Toutes les 10 minutes : 0, 60, 120, 180, 240
 				event_t evt = { EVENT_TIMER_10min, 0, 0 };
 				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 					code_erreur = ISR_callback; 		err_donnee1 = 7; }
@@ -264,6 +279,12 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 		#endif
 
 		if (counter % 2 == 0) {  // Toutes les 20 secondes
+			event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
+			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+				code_erreur = ISR_callback; 		err_donnee1 = 6; }
+		}
+
+		if (counter % 2 == 0) {  // Toutes les 20 secondes
 			event_t evt = { EVENT_TIMER_20min, 0, 0 };
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 				code_erreur = ISR_callback; 		err_donnee1 = 5; }
@@ -276,11 +297,6 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
 		}
 
-		if (counter % 2 == 0) {  // Toutes les 20 secondes
-			event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
-			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-				code_erreur = ISR_callback; 		err_donnee1 = 6; }
-		}
 		#if CLASS == 'B'
 		if (counter % 3 == 0) {  // Toutes les 30 secondes : Ecoute balise du concentrateur
 			event_t evt = { EVENT_LORA_REVEIL_BALISE, 0, 0 };
@@ -377,6 +393,21 @@ uint32_t lptim_get_seconds(void)
     }
 }*/
 
+#if CODE_TYPE == 'C'
+	void M3VoiesCallback(TimerHandle_t xTimer)
+	{
+		LOG_INFO("3voies");
+		HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
+
+		event_t evt = { EVENT_TIMER_3Voies, 0, 0 };
+		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+		{
+			LOG_ERROR("Event queue full - message lost");
+		}
+	}
+#endif
+
 /*static void Timer24hCallback(TimerHandle_t xTimer)
 {
     LOG_INFO("timer24h declenche");
@@ -386,6 +417,7 @@ uint32_t lptim_get_seconds(void)
 	    LOG_ERROR("Event queue full - message lost");
 	}
 }
+
 
 static void Timer20minCallback(TimerHandle_t xTimer)
 {
@@ -1064,7 +1096,9 @@ void display_current_time(void)
 uint32_t get_rtc_seconds_since_midnight(void)
 {
     RTC_TimeTypeDef sTime;
+    RTC_DateTypeDef sDate;
     HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
     // Convertir en secondes depuis minuit
     return sTime.Hours * 3600 + sTime.Minutes * 60 + sTime.Seconds;
@@ -1322,7 +1356,7 @@ uint16_t decod_asc16 (uint8_t* index)
 	uint16_t val=0;
 	for (uint8_t i=0; i<4; i++)
 	{
-		uint8_t car = *(index+1-i);
+		uint8_t car = *(index+3-i);
 		if (( car >='0') && ( car <= '9'))
 				val |= ((car-'0')<<(i*4));
 		else if (( car >='A') && ( car <= 'F'))
@@ -1336,7 +1370,7 @@ uint32_t decod_asc32 (uint8_t* index)
 	uint32_t val=0;
 	for (uint8_t i=0; i<8; i++)
 	{
-		uint8_t car = *(index+1-i);
+		uint8_t car = *(index+7-i);
 		if (( car >='0') && ( car <= '9'))
 				val |= ((car-'0')<<(i*4));
 		else if (( car >='A') && ( car <= 'F'))
@@ -1345,4 +1379,54 @@ uint32_t decod_asc32 (uint8_t* index)
 	return val;
 }
 
+void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max)
+{
+    pid->Kp = Kp;
+    pid->Ti = Ti;
+    pid->dt = dt;
 
+    pid->integrator = 0.0f;
+    pid->last_error = 0.0f;
+
+    pid->out_min = out_min;
+    pid->out_max = out_max;
+
+
+    // Calcul des coefficients incrémentaux (forme discrète)
+    // méthode Trapèze / Tustin
+    //float Ki = (Ti > 0.0f) ? (Kp * dt / Ti) : 0.0f;
+    //float Kd = Kp * Td / dt;
+
+    //pid->a0 = Kp + Ki/2 + Kd;
+    //pid->a1 = -Kp + Ki/2 - 2*Kd;
+    //pid->a2 = Kd;
+}
+
+/* float du = Kp * (e0 - e1)
+          + (Kp / Ti) * dt * e0                // Ki = Kp/Ti  => Ki*dt*e
+          + Kp * Td * (e0 - 2*e1 + e2) / dt;  // Kd = Kp*Td => Kd*(second diff)/dt*/
+
+float PIDd_Compute(PID_t *pid, float setpoint, float measurement)
+{
+    float e = setpoint - measurement;
+
+    LOG_INFO("PID : Ecart:%i", (int16_t)(e*10));
+
+    // Intégrale
+	pid->integrator += (pid->Kp / pid->Ti) * e * pid->dt;
+
+	// Limitation anti-windup
+	if (pid->integrator > pid->out_max) pid->integrator = pid->out_max;
+	if (pid->integrator < pid->out_min) pid->integrator = pid->out_min;
+
+	// Sortie PI
+	float u = pid->Kp * e + pid->integrator;
+
+	// Saturation
+	if (u > pid->out_max) u = pid->out_max;
+	if (u < pid->out_min) u = pid->out_min;
+
+	pid->last_error = e;
+
+    return u;
+}

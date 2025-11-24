@@ -19,7 +19,6 @@
 #include "queue.h"
 
 #define WATCHDOG
-//#define mode_sleep
 
 // Structure pour les événements
 typedef struct {
@@ -43,8 +42,11 @@ typedef enum  {
     EVENT_SYSTEM_RESET,
 	EVENT_WATCHDOG_CHECK,
     EVENT_TIMER_24h,
-    EVENT_TIMER_1min,
-    EVENT_TIMER_10min,
+	#if CODE_TYPE == 'C'
+		EVENT_TIMER_1min,
+		EVENT_TIMER_10min,
+		EVENT_TIMER_3Voies,
+	#endif
 	EVENT_TIMER_Tempe,
     EVENT_TIMER_20min,
 	EVENT_TIMER_LPTIM,
@@ -96,10 +98,34 @@ typedef struct {
     watchdog_context_t context; // Contexte de la tâche
 } watchdog_task_info_t;
 
+typedef struct {
+    float Kp;
+    float Ti;
+    float Td;
+    float dt;
+
+    float e1;   // erreur[k-1]
+    float e2;   // erreur[k-2]
+    float u1;   // sortie précédente u[k-1]
+
+    float integrator;
+    float last_error;
+    float last_measure;    // pour dérivée sur la mesure filtrée
+    float der_filtered;    // état du filtre dérivé
+
+    // filtre dérivé (0..1), plus proche de 1 => plus lissé
+    float alpha_der;
+
+    float out_min;
+    float out_max;
+
+    float a0, a1, a2;
+} PID_t;
+
 // Configuration du watchdog
 #define WATCHDOG_TIMEOUT_MS        22   // 60 secondes par défaut
 #define WATCHDOG_ERROR_THRESHOLD   3       // Nombre d'erreurs avant reset
-#define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 5 secondes
+#define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 10 secondes
 
 extern LPTIM_HandleTypeDef hlptim1;
 extern LPTIM_HandleTypeDef hlptim2;
@@ -115,6 +141,7 @@ void lptim2_schedule_ms(uint32_t delay_ms);
 extern uint8_t test_index;
 extern uint8_t test_var;
 extern uint32_t test_tab[test_MAX];
+extern PID_t myPID;
 
 // Fonctions du système watchdog
 void watchdog_init(void);
@@ -131,6 +158,9 @@ uint32_t get_rtc_seconds_since_midnight(void);
 uint8_t decod_asc8 (uint8_t* index);
 uint16_t decod_asc16 (uint8_t* index);
 uint32_t decod_asc32 (uint8_t* index);
+void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max);
+float PIDd_Compute(PID_t *pid, float setpoint, float measurement);
+
 
 // Fonctions de diagnostic du reset
 void display_reset_cause(void);

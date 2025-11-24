@@ -80,7 +80,7 @@ static void MX_IWDG_Init(void);
 static void MX_RTC_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_LPTIM1_Init(void);
-void MX_ADC_Init(void);
+static void MX_ADC_Init(void);
 static void MX_LPTIM2_Init(void);
 static void MX_LPTIM3_Init(void);
 static void MX_I2C2_Init(void);
@@ -131,7 +131,7 @@ int main(void)
   MX_RTC_Init();
   MX_LPUART1_UART_Init();
   MX_LPTIM1_Init();
-  //MX_ADC_Init();
+  MX_ADC_Init();
   MX_LPTIM2_Init();
   MX_LPTIM3_Init();
   MX_I2C2_Init();
@@ -387,7 +387,7 @@ static void MX_NVIC_Init(void)
   * @param None
   * @retval None
   */
-void MX_ADC_Init(void)
+static void MX_ADC_Init(void)
 {
 
   /* USER CODE BEGIN ADC_Init 0 */
@@ -788,10 +788,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_13, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_13, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PA13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  /*Configure GPIO pins : PA6 PA7 PA13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
