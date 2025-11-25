@@ -248,7 +248,7 @@ void configure_radio_parameters(void)
 {
 
 	lora_bufferMutex = osMutexNew(NULL);
-	LOG_INFO("mutex=%p", lora_bufferMutex);
+	//LOG_INFO("mutex=%p", lora_bufferMutex);
 
     // 1. Vérifier que la fréquence est supportée
     /*if (!Radio.CheckRfFrequency(868100000UL)) {
@@ -1289,22 +1289,22 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 	    else
 	        free_space = (lora_tail[q_id] - lora_head[q_id]) - 1;
 	 }
-    UART_SEND("Send2\n\r");
+    /*UART_SEND("Send2\n\r");
 
     if (lora_bufferMutex == NULL) {
         LOG_ERROR("Mutex LORA pas créé !");
         HAL_Delay(100);
         return 1;
-    }
+    }*/
 
 	osStatus_t status = osMutexAcquire(lora_bufferMutex, 5000);
 	if (status != osOK)
 	{
-		UART_SEND("Send9\n\r");
+		//UART_SEND("Send9\n\r");
 		return 3;
 	}
 
-	UART_SEND("Send3\n\r");
+	//UART_SEND("Send3\n\r");
 
     uint16_t head_prov = lora_head[q_id];
 
@@ -1317,7 +1317,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
             head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
         }
 
-   	UART_SEND("Send4\n\r");
+   	//UART_SEND("Send4\n\r");
 
     /*char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
     char *p = hex_str;
@@ -1332,9 +1332,9 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
 	//osDelay(100);
 	//LOG_INFO("enqueuelora:head:%d tail:%d mess:%s len:%i dest:%c", lora_head[2], lora_tail[2], mess->data, mess->length, mess->dest);
     //osDelay(100);
-   	UART_SEND("Send5\n\r");
+   	//UART_SEND("Send5\n\r");
     osMutexRelease(lora_bufferMutex);
-   	UART_SEND("Send6\n\r");
+   	//UART_SEND("Send6\n\r");
 
     if ((g_tx_state == TX_IDLE) && (q_id==0)) // notification d'envoi si pas d'envoi en cours
     {

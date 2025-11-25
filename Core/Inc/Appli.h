@@ -19,7 +19,7 @@
 #define ID_CONCENTRATOR	'H'
 
 #define CODE_VERSION  "1.9"
-#define CODE_TYPE 'C'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
+#define CODE_TYPE 'B'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
 
 
 #define END_NODE   // sinon #define CONCENTRATOR
@@ -31,10 +31,10 @@
 		//#define mode_sleep
 	#elif CODE_TYPE == 'B' // Garches chaudiere Thermometre
 		#define My_Address 'I'
-		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
+		#define CLASS LORA_CLASS_C  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 		#define MAX_SENS 20
 		#define TEMP_PERIOD	30  // 30 secondes
-		#define mode_sleep
+		//#define mode_sleep
 
 	#elif CODE_TYPE == 'C' // Garches chaudiere Moteur
 		#define My_Address 'J'
