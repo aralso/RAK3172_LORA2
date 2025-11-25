@@ -666,10 +666,10 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
   		   if (j==7) {
 			    retc = mess_LORA_enqueue(mess);
   			    mess->dest = table_routage[i][3];
-			    char uart_msg[50];
+			    /*char uart_msg[50];
 			    snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
 			    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
-			    HAL_Delay(10);
+			    HAL_Delay(10);*/
 			    //LOG_INFO("enqueue:%i", retc);
 			    //HAL_Delay(100);
 			  //retc = send_lora_message((const char*)mess, len,  table_routage[i][3]);

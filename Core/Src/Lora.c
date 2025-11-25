@@ -54,7 +54,11 @@ uint8_t att_cad=0;
 	static uint16_t lora_tail[1];
 	uint8_t nb_nodes=0;
 	#define NB_MAX_NODES 1
-	nodes_t nodes[1];
+	#if CODE_TYPE == 'C'
+		nodes_t nodes[2];
+	#else
+		nodes_t nodes[1];
+	#endif
 #else
 	static uint8_t lora_buff[MESS_BUFFER_SIZE][3];  // class C, B, A
 	static uint16_t lora_head[3];

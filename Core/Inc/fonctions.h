@@ -42,11 +42,6 @@ typedef enum  {
     EVENT_SYSTEM_RESET,
 	EVENT_WATCHDOG_CHECK,
     EVENT_TIMER_24h,
-	#if CODE_TYPE == 'C'
-		EVENT_TIMER_1min,
-		EVENT_TIMER_10min,
-		EVENT_TIMER_3Voies,
-	#endif
 	EVENT_TIMER_Tempe,
     EVENT_TIMER_20min,
 	EVENT_TIMER_LPTIM,
@@ -54,6 +49,11 @@ typedef enum  {
     EVENT_CAD_DONE,
     EVENT_LORA_TX_STEP,
     EVENT_LORA_ACK_TIMEOUT,
+	#if CODE_TYPE == 'C'
+		EVENT_TIMER_1min,
+		EVENT_TIMER_10min,
+		EVENT_TIMER_3Voies,
+	#endif
 	EVENT_LORA_RX_TEST
 } EventId_t;
 
