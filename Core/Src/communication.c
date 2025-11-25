@@ -34,7 +34,7 @@
 
 uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
               // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
-
+			  // 0x22 : Ack - 2 envois , rx apres
 /* gestion des erreurs
 Code_erreur => utile dans les ISR, peut masquer les premieres erreurs simultanées, gestion des répétitions
 LOG_WARN(..) => envoie un message sur la sortie prédéfinie. message complet, limite 4/10min, pas ISR
@@ -664,14 +664,14 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 			    retc = mess_LORA_enqueue(mess);
 		   }
   		   if (j==7) {
-  			    mess->dest = table_routage[i][3];
 			    retc = mess_LORA_enqueue(mess);
+  			    mess->dest = table_routage[i][3];
+			    char uart_msg[50];
+			    snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
+			    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
+			    HAL_Delay(10);
 			    //LOG_INFO("enqueue:%i", retc);
-			    //HAL_Delay(10);
-			    //char uart_msg[50];
-			    //snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
-			    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
-			    //HAL_Delay(10);
+			    //HAL_Delay(100);
 			  //retc = send_lora_message((const char*)mess, len,  table_routage[i][3]);
   		   }
  	  }
@@ -1164,7 +1164,8 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			{
 				if ((message_in[5] == 'S') && (longueur_m == 6))   // CHLS  Lecture Statut
 				{
-                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i Cons_ap:%i 3V:%i", message_in[1], consigne_actuelle, Tint, consigne_apres, (uint16_t)(pos_prec) );
+                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
+                		   consigne_regulation, Tint, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
 				}
 				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
 				{
@@ -1188,7 +1189,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			if (message_in[4] == 'E')  // Ecriture
 			{
 				// temperature interieure
-				if ((message_in[5] == 'T') && (longueur_m == 10))   // CHETxx  Temperature interieure
+				if ((message_in[5] == 'T') && (longueur_m == 8))   // CHETxx  Temperature interieure
 				{
 					uint16_t TempI = decod_asc8(message_in+6); // 5° à 25°
 					if ((TempI>=50) && (TempI<=250))
@@ -1210,6 +1211,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 						LOG_INFO("actuel:%i", date_actuel);
 						forcage_duree = dur + date_actuel;
 						forcage_consigne = cons;
+						consigne_regulation = cons;
 						// Arret : bit 31  forcage_duree: 23 bits
 						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
 					}
@@ -1221,10 +1223,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 						ch_arret = message_in[6] - '0';
 						// Arret : bit 31  forcage_duree: 23 bits
 						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
-						if (ch_arret)  // arret
-							HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
-						else  // marche
+						ch_circulateur = 1 - ch_arret;
+						if (ch_circulateur)  // marche
 							HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
+						else  // marche
+							HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
 					}
 				}
 				if ((message_in[5] == 'P') && (longueur_m == 16))   // CHEPxddfftccaa  Planning chauffage
@@ -1259,7 +1262,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 
 		if ((message_in[2] == 'H'))
 		{
-			if (message_in[3] == 'E')  // HEHhhmmss : Ecriture heure
+		  if (message_in[3] == 'E')  // HEHhhmmss : Ecriture heure
 		  {
 				if (message_in[4] == 'H')  // HEHhhmmss : Ecriture heure
 				{
@@ -1278,11 +1281,34 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					set_rtc_from_timestamp(timestamp);
 				}
 		  }
-			if (message_in[3] == 'L')
+		  if (message_in[3] == 'L')
 		  {
-			if (message_in[4] == 'H')  // 1HLH : Lecture Heure
+			  if (message_in[4] == 'H')  // HLH : Lecture Heure
 			  {
 				display_current_time();
+			  }
+			  if (message_in[4] == 'S')  // HLS : Lecture Heure en binaire
+			  {
+				    uint32_t time = get_rtc_timestamp();
+					message.dest = message_in[1];
+					message.type = 1;  // binaire
+					message.data[0] = message.dest | 0x80;
+					uint8_t i=2;
+					message.data[i++] = 'H';
+					message.data[i++] = 'E';
+					message.data[i++] = 'S';
+					memcpy (&message.data[i], &time, 4);
+					i += 4;
+					message.data[1] = i-3;
+					//envoie_mess_bin(&message);
+
+	                char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+	                char *p = hex_str;
+	                for (uint8_t j = 0; j < i; j++) {
+	                    p += sprintf(p, "%02X ", message.data[j]);  // Espace entre chaque octet
+	                }
+	                LOG_INFO("HES:time:%i lg:%i %s", time, i, hex_str);
+
 			  }
 		  }
 		}

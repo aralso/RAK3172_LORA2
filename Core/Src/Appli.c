@@ -108,13 +108,15 @@ const osThreadAttr_t Appli_Task_attributes = {
 	uint8_t ch_cons_apres[NB_MAX_PGM];  // 3° à 23°C, par pas de 0,5°C (6 bits)
 	uint32_t forcage_duree;    // par pas de 10 min 1/1/2020=0 (sur 23bits)
 	uint8_t forcage_consigne;  // 0 à 23°C
-	uint8_t consigne_actuelle;
+	uint8_t consigne_normale;
 	uint8_t consigne_apres;
 	uint8_t ch_arret; // 1 bit
 	float pos_prec;
 	uint8_t init_attente;
 	uint8_t cpt_circulateur;
 	uint16_t Tint;
+	uint8_t ch_circulateur;
+	uint8_t consigne_regulation;
 	#endif
 
 void LORA_RXTsk(void *argument);
@@ -126,6 +128,8 @@ uint16_t BSP_RAK5005_GetBatteryLevel(void);
 uint8_t GetInternalTemp(void);
 uint32_t BSP_ADC_ReadChannels(uint32_t channel);
 void calcul_pid_vanne(void);
+void chgt_consigne(void);
+void pid_forcage_init(void);
 
 void init1()  // avant KernelInitialize
 {
@@ -235,33 +239,107 @@ void init3()   // taches
 // Apres KernelStart, dans Appli_task
 void init4(void)
 {
+
+    init_functions4();  // watchdog, Log, eeprom
+    MX_SubGHz_Phy_Init();  // init radio, mutex lora
+
   #if CODE_TYPE == 'C'
-	consigne_actuelle = 19*10;
-	ch_debut[0] = 6*6;
+	consigne_normale = 19*10;
+	consigne_apres = 15*10;
+	consigne_regulation = 190;  // consigne par défaut : 19°C
+	Tint = 190;
+
+	/*ch_debut[0] = 6*6;
 	ch_fin[0] = 22*6;
 	ch_consigne[0] = 20*10;
 	ch_cons_apres[0] = 16*10;
 	test_var = 190;
-	ch_arret = 1;
+	ch_arret = 1;*/
 
-	// TODO lire EEPROM
+	uint8_t err;
+	// Forcage et arret chauffage :  Arret : bit 31  forcage_duree: 8à30 bits forcage_consigne:0à7
+	uint32_t val32;
+	err = EEPROM_Read32( 1 , &val32 );
+	if (!err)
+	{
+		ch_arret = val32>>31;
+		forcage_duree = (val32>>8) & 0x007FFFFF;
+		forcage_consigne = (val32 & 0xFF);
+		if ((forcage_consigne<50) || (forcage_consigne>230))
+			err=1;
+		else
+			LOG_INFO("Chauffage Arret:%i Forcage:%i consigne forcage:%i", ch_arret, forcage_duree, forcage_consigne);
+	}
+	if (err)
+	{
+		ch_arret = 1;
+		forcage_duree = 0;
+		forcage_consigne = 180;
+		EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
+		LOG_INFO("Raz Init forcage");
+	}
+
+	// Lecture programmes 26-31:cons_ap 24-25:type 16-23:cons 8-15:fin 0-7:debut
+	for (uint8_t i=0; i<NB_MAX_PGM; i++)
+	{
+		err = EEPROM_Read32( 2+i , &val32 );
+		if (!err)
+		{
+			ch_debut[i] = val32 & 0xFF;
+			ch_fin[i] = (val32>>8) & 0xFF;
+			ch_consigne[i] = (val32>>16) & 0xFF;
+			ch_cons_apres[i] = (val32>>26) & 0xFF;
+			ch_type[i] = (val32>>24) & 3;
+			if (((ch_debut[i]<145) && (ch_fin[i]<145) && (ch_type[i]<3) && (ch_consigne[i]>=50) \
+					&& (ch_consigne[i]<=230) && (ch_cons_apres[i]>=6) && (ch_cons_apres[i]<=64)))
+				LOG_INFO("Chauffage Programme %i: debut:%i fin:%i type:%i consigne:%i cons_apres:%i", \
+						i, ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
+			else
+				err=1;
+		}
+		if (err)
+		{
+			if (i)
+			{
+				ch_debut[i] = 0;
+				ch_fin[i] = 0;
+				ch_consigne[i] = 19*10;
+				ch_cons_apres[i] = 16*2;
+				ch_type[i] = 0;
+			}
+			else
+			{
+				ch_debut[i] = 7*6;
+				ch_fin[i] = 22*6;
+				ch_consigne[i] = 19*10;
+				ch_cons_apres[i] = 16*2;
+				ch_type[i] = 0;
+			}
+			EEPROM_Write32(2+i, (ch_cons_apres[i]<<26) | (ch_type[i]<<24) | (ch_consigne[i]<<16) | (ch_fin[i]<<8) | ch_debut[i]);
+			LOG_INFO("Raz Programme %i", i);
+		}
+	}
 
 	// init circulateur
-	if (ch_arret)  // arret
-		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
-	else  // marche
+	ch_circulateur = 1 - ch_arret;
+	if (ch_circulateur)  // marche
 		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
+	else  // marche
+		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
 
-	// ferme la vanne : 140 secondes en fermeture
-	pos_prec = 0.0;
-	HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_SET);
+	init_attente = 2;
+	#ifndef MODE_DEBUG
+		// ferme la vanne : 140 secondes en fermeture
+		pos_prec = 0.0;
+		HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_SET);
 
-	TickType_t ticks = pdMS_TO_TICKS((uint32_t)(FULL_TRAVEL_TIME * 1000.0f));
-	xTimerChangePeriod(HTimer_M3voies, ticks, 0); // Change la durée
-	xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
+		TickType_t ticks = pdMS_TO_TICKS((uint32_t)(FULL_TRAVEL_TIME * 1000.0f));
+		xTimerChangePeriod(HTimer_M3voies, ticks, 0); // Change la durée
+		xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
 
-	init_attente=3;
+		init_attente=3;
+	#endif
 
 	PIDd_Init(&myPID,
 	              2.0f,       // Kp
@@ -271,9 +349,10 @@ void init4(void)
 	              0.0f, 100.0f);
   #endif
 
-    init_functions4();  // watchdog, Log, eeprom
-
-    MX_SubGHz_Phy_Init();
+	// Demande de mise à l'heure par le node
+	#ifdef END_NODE
+		//envoie_mess_ASC(0x10, "HHLS");  // 22:Ack avec 2 renvois, RX apres  24:5 renvois
+	#endif
 
     //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitB", 5, 3000);
     //HAL_Delay(500);
@@ -821,12 +900,13 @@ void Appli_Tsk(void *argument)
 				}
 
 				#if CODE_TYPE == 'C'  // Chaudiere chauffage
-					case EVENT_TIMER_1min: { // PID -> vanne 3 voies
+					case EVENT_TIMER_1min: { // calcul PID -> pilotage vanne 3 voies
 						LOG_INFO("timer 1min");
 						HAL_Delay(1000);
-						if (init_attente) init_attente--;
-						if (!init_attente)
-							calcul_pid_vanne();
+						if (init_attente) init_attente--;          // attent 3 minutes que la vanne se ferme
+						if (init_attente==1) envoie_mess_ASC(0x10, "HHLS");  // 22:Ack avec 2 renvois, RX apres  24:5 renvois
+						//if (init_attente==1)  pid_forcage_init();  // initialise la consigne de forcage
+						if (init_attente==0)  calcul_pid_vanne();  // régule chaque minute le pid
 						break;
 					}
 
@@ -838,38 +918,7 @@ void Appli_Tsk(void *argument)
 					case EVENT_TIMER_10min: { // chaque 10 min : chgt de consigne
 						LOG_INFO("timer 10min");
 						HAL_Delay(1000);
-
-
-						if (!ch_arret)
-						{
-							RTC_TimeTypeDef sTime;
-							RTC_DateTypeDef sDate;
-							HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-							HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-							uint8_t tps_actuel = sTime.Hours*6 + sTime.Minutes/10;
-							uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
-							LOG_INFO("forcage:actuel%i fin:%i", date_actuel, forcage_duree);
-							if (forcage_duree <= date_actuel)
-							{
-								forcage_duree = 0;
-								LOG_INFO("pas de forcage");
-								uint8_t valid = 0;
-								for (uint8_t i=0; i<NB_MAX_PGM; i++)
-								{
-									if (ch_debut[i] != ch_fin[i])
-									{
-										if ((tps_actuel >= ch_debut[i]) && (tps_actuel <= ch_fin[i]))
-										{
-											valid=1;
-											consigne_actuelle = ch_consigne[i];
-											consigne_apres = ch_cons_apres[i];
-										}
-									}
-								}
-								if (!valid) consigne_actuelle = consigne_apres;
-							}
-						}
-
+						if (!ch_arret)  chgt_consigne();
 						break;
 					}
 				#endif
@@ -1117,32 +1166,71 @@ uint8_t GetInternalTemp(void)
 }
 
 #if CODE_TYPE == 'C'  // Chaudiere - chauffage
+
+void chgt_consigne(void)
+{
+	RTC_TimeTypeDef sTime;
+	RTC_DateTypeDef sDate;
+	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	uint8_t tps_actuel = sTime.Hours*6 + sTime.Minutes/10;
+	uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
+	//LOG_INFO("forcage:actuel%i fin:%i", date_actuel, forcage_duree);
+	if (forcage_duree <= date_actuel)
+	{
+		forcage_duree = 0;
+		uint8_t valid = 0;
+		for (uint8_t i=0; i<NB_MAX_PGM; i++)
+		{
+			if (ch_debut[i] != ch_fin[i])
+			{
+				if ((tps_actuel >= ch_debut[i]) && (tps_actuel <= ch_fin[i]))
+				{
+					valid=1;
+					consigne_normale = ch_consigne[i];
+					consigne_regulation = consigne_normale;
+					consigne_apres = ch_cons_apres[i] * 5;  // pas de 0,5°C => pas de 0,1°C
+					LOG_INFO("pgm valide %i", i);
+				}
+			}
+		}
+		if (!valid)
+		{
+			consigne_regulation = consigne_apres;
+			LOG_INFO("fin de prog. cons:%i", consigne_apres);
+		}
+	}
+}
+
+
 void calcul_pid_vanne(void)
 {
 	// calcul PID
 	float temp_int = ((float)Tint)/10.0;     // mesure
-	float fl_consigne = ((float) consigne_actuelle)/10.0;     // référence
+	float fl_consigne = ((float) consigne_regulation)/10.0;     // référence
 
 	float position = PIDd_Compute(&myPID, fl_consigne, temp_int);
 
-	LOG_INFO("PID:cons:%i temp:%i prec:%i fut:%i", consigne_actuelle, test_var, (uint16_t)(pos_prec*10), (uint16_t)(position*10));
+	LOG_INFO("PID:cons:%i temp:%i prec:%i futur:%i", consigne_regulation, Tint, (uint16_t)(pos_prec*10), (uint16_t)(position*10));
 
 	if ((!position) && (!pos_prec))
 	{
 		LOG_INFO("vanne fermee %i", cpt_circulateur);
-		if (cpt_circulateur < 10)
+		if (cpt_circulateur < 3)
 		{
 			cpt_circulateur++;
-			if (cpt_circulateur == 10)  // arret circulateur
+			if (cpt_circulateur == 3)  // arret circulateur
 			{
-				ch_arret=1;
+				ch_circulateur = 0;
 				HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_RESET);
+				LOG_INFO("Arret circulateur %i", cpt_circulateur);
 			}
 		}
 	}
-	else if (ch_arret)
+	else if (!ch_circulateur)
 	{
-		ch_arret=0;
+		ch_circulateur = 1;
+		cpt_circulateur = 0;
 		HAL_GPIO_WritePin(CIRCULATEUR_GPIO, CIRCULATEUR_PIN, GPIO_PIN_SET);
 	}
 
@@ -1191,4 +1279,26 @@ void calcul_pid_vanne(void)
 	}
 	pos_prec = position;
 }
+
+// initialise la consigne de forcage
+void pid_forcage_init(void)
+{
+	RTC_TimeTypeDef sTime;
+	RTC_DateTypeDef sDate;
+	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	uint32_t date_actuel = ((sDate.Year-20)*372 + sDate.Month*31 + sDate.Date)*144  + sTime.Hours*6 + sTime.Minutes/10;
+	//LOG_INFO("forcage:actuel%i fin:%i", date_actuel, forcage_duree);
+	if (forcage_duree <= date_actuel)  // pas de forcage
+	{
+		forcage_duree = 0;
+		LOG_INFO("Init : pas de forcage");
+	}
+	else
+	{
+		consigne_regulation = forcage_consigne;
+		LOG_INFO("Init : forcage cons:%i", consigne_regulation);
+	}
+}
+
 #endif

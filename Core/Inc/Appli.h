@@ -10,16 +10,17 @@
 
 #include "stm32wlxx_hal.h"
 
+#define MODE_DEBUG  // permet de ne pas fermer la vanne 3 minutes à l'init
 
-
-#define LED_Pin GPIO_PIN_11
+#define LED_Pin GPIO_PIN_11   // LED : A11
 #define LED_GPIO_Port GPIOA
-#define bouton_Pin GPIO_PIN_12
+#define bouton_Pin GPIO_PIN_12 // bouton : A12
 #define bouton_GPIO_Port GPIOA
 #define ID_CONCENTRATOR	'H'
 
 #define CODE_VERSION  "1.9"
 #define CODE_TYPE 'C'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
+
 
 #define END_NODE   // sinon #define CONCENTRATOR
 
@@ -54,13 +55,14 @@
 	extern uint8_t ch_consigne[];  // 5° à 23°C, par pas de 0,1°C
 	extern uint8_t ch_cons_apres[];  // 3° à 23°C, par pas de 0,5°C (6 bits)
 	extern uint32_t forcage_duree;    // par pas de 10 min 1/1/2020=0 (sur 23bits)
-	extern uint8_t forcage_consigne;  // 0 à 23°C
-	extern uint8_t consigne_actuelle;
+	extern uint8_t forcage_consigne;  // 0 à 23°C, par pas de 0,1°C
+	extern uint8_t consigne_normale;
+	extern uint8_t consigne_regulation;
 	extern uint8_t consigne_apres;
 	extern uint8_t ch_arret; // 1 bit
 	extern uint16_t Tint;
 	extern 	float pos_prec;
-
+	extern uint8_t ch_circulateur;
 
 	#define FULL_TRAVEL_TIME   140      // temps total 0→100% en secondes
 	#define WINDOW_TIME        60       // une fenêtre de 60 secondes
