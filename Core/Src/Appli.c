@@ -729,6 +729,7 @@ void Appli_Tsk(void *argument)
   /* USER CODE BEGIN Appli_Tsk */
 
     init4(); // watchdog, Log, eeprom, demarrage LPTIM1
+    UART_SEND("Init5\n\r");
 
     // Démarrer la surveillance watchdog pour cette tâche
   	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);

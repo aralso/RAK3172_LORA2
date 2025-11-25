@@ -143,9 +143,12 @@ int main(void)
 
   init1();
   /* USER CODE END 2 */
+  UART_SEND("Init1\n\r");
 
   /* Init scheduler */
   osKernelInitialize();
+
+  UART_SEND("Init2\n\r");
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -174,7 +177,9 @@ int main(void)
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   init2();  // queues, timers
+  UART_SEND("Init3\n\r");
   init3();  // taches
+  UART_SEND("Init4\n\r");
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */

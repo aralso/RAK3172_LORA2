@@ -112,7 +112,7 @@ static uint8_t mess_buffer[MESS_BUFFER_SIZE];
 static uint16_t uart_head = 0;
 static uint16_t uart_tail = 0;
 
-static osMutexId_t bufferMutex;
+static SemaphoreHandle_t  bufferMutex;
 
 
 uint8_t mess_enqueue(out_message_t* mess);
@@ -174,7 +174,7 @@ uint8_t init_communication(void)
     log_mutex = xSemaphoreCreateMutex();
 
 	// Initialisation du mutex pour mettre enqueue
-	bufferMutex = osMutexNew(NULL);
+	bufferMutex = xSemaphoreCreateMutex();
 	/*if (bufferMutex == NULL) {
 		LOG_ERROR("Failed to create bufferMutex");
 		return;
@@ -301,6 +301,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 void Uart_RX_Tsk(void *argument)
 {
+
+	  UART_SEND("Init6\n\r");
 
     // Démarrer la surveillance watchdog
     watchdog_task_start(WATCHDOG_TASK_UART_RX);
@@ -666,8 +668,8 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
   		   if (j==7) {
 			    retc = mess_LORA_enqueue(mess);
   			    mess->dest = table_routage[i][3];
-			    char uart_msg[50];
-			    snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
+			    char uart_msg[100];
+			    snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess->data);
 			    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
 			    HAL_Delay(10);
 			    //LOG_INFO("enqueue:%i", retc);
@@ -719,83 +721,89 @@ uint8_t mess_enqueue(out_message_t* mess)
 	        free_space = (uart_tail - uart_head) - 1;
 	 }
 
-	osStatus_t status = osMutexAcquire(bufferMutex, 5000);
-	if (status != osOK) return 3;
+	if (xSemaphoreTake(bufferMutex, pdMS_TO_TICKS(5000)))
+		return 3;
+	else
+	{
+		uint16_t head_prov = uart_head;
 
-    uint16_t head_prov = uart_head;
+		uint8_t* mess_ptr = (uint8_t*)mess;
+			for (uint16_t i = 0; i < total_size; i++) {
+				mess_buffer[head_prov] = mess_ptr[i];
+				head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
+			}
 
-    uint8_t* mess_ptr = (uint8_t*)mess;
-        for (uint16_t i = 0; i < total_size; i++) {
-            mess_buffer[head_prov] = mess_ptr[i];
-            head_prov = (head_prov + 1) % MESS_BUFFER_SIZE;
-        }
+			uart_head = head_prov;
 
-        uart_head = head_prov;
-
-    osMutexRelease(bufferMutex);
-    xTaskNotifyGive(Uart_TX_TaskHandle); // Notifier la tache UArt_TX
-    return 0;
+		xSemaphoreGive(bufferMutex);
+		xTaskNotifyGive(Uart_TX_TaskHandle); // Notifier la tache UArt_TX
+		return 0;
+	}
 }
 
 // Extraction d’un message
 uint8_t mess_dequeue(out_message_t* mess)
 {
-	osStatus_t status = osMutexAcquire(bufferMutex, 10000);
-	if (status != osOK) return 4;
+	if (xSemaphoreTake (bufferMutex, pdMS_TO_TICKS(10000)))
+		return 4;
+	else
+		{
+		uint16_t tail_prov=uart_tail;
 
-	uint16_t tail_prov=uart_tail;
-
-    if (uart_head == uart_tail) {
-        osMutexRelease(bufferMutex);
-        return 1; // FIFO vide
-    }
+		if (uart_head == uart_tail) {
+			xSemaphoreGive(bufferMutex);
+			return 1; // FIFO vide
+		}
 
 
-    uint16_t size = mess_buffer[uart_tail];
+		uint16_t size = mess_buffer[uart_tail];
 
-	//osDelay(300);
-	//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
-    //osDelay(300);
+		//osDelay(300);
+		//LOG_INFO("dequeue1:head:%d tail:%d", head, tail);
+		//osDelay(300);
 
-    // Vérif longueur valide
-	if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
-	{
-		uart_head=0;
-		uart_tail=0;
-		osMutexRelease(bufferMutex);
-		return 2; // corruption détectée
+		// Vérif longueur valide
+		if ((size < 5) || (size > MESS_LG_MAX) || tail_prov >= MESS_BUFFER_SIZE)
+		{
+			uart_head=0;
+			uart_tail=0;
+			xSemaphoreGive(bufferMutex);
+			return 2; // corruption détectée
+		}
+
+		// Vérif que les données tiennent dans la FIFO actuelle
+		uint16_t available = (uart_head >= tail_prov) ?
+							 (uart_head - tail_prov) :
+							 (MESS_BUFFER_SIZE - (tail_prov - uart_head));
+
+		if (available < size) {
+			uart_head=0;
+			uart_tail=0;
+			xSemaphoreGive(bufferMutex);
+			return 3; // corruption : message incomplet
+		}
+
+		uint8_t* mess_ptr = (uint8_t*)mess;
+			for (uint16_t i = 0; i < size+4; i++) {
+				mess_ptr[i] = mess_buffer[tail_prov];
+				tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
+			}
+		uart_tail = tail_prov;
+		//osDelay(300);
+		//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
+		//osDelay(300);
+
+		xSemaphoreGive(bufferMutex);
+		return 0;
 	}
-
-	// Vérif que les données tiennent dans la FIFO actuelle
-	uint16_t available = (uart_head >= tail_prov) ?
-						 (uart_head - tail_prov) :
-						 (MESS_BUFFER_SIZE - (tail_prov - uart_head));
-
-	if (available < size) {
-		uart_head=0;
-		uart_tail=0;
-		osMutexRelease(bufferMutex);
-		return 3; // corruption : message incomplet
-	}
-
-    uint8_t* mess_ptr = (uint8_t*)mess;
-        for (uint16_t i = 0; i < size+4; i++) {
-            mess_ptr[i] = mess_buffer[tail_prov];
-            tail_prov = (tail_prov + 1) % MESS_BUFFER_SIZE;
-        }
-    uart_tail = tail_prov;
-	//osDelay(300);
-	//LOG_INFO("dequeue2:head:%d tail:%d lg:%d", head, tail, *len);
-    //osDelay(300);
-
-    osMutexRelease(bufferMutex);
-    return 0;
 }
 
 void Uart_TX_Tsk(void *argument)
 {
     out_message_t mess;
     //uint32_t last_status_time = 0;
+
+    UART_SEND("Init7\n\r");
 
     //osDelay(100);
 
