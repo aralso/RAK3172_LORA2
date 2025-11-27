@@ -67,6 +67,8 @@ uint8_t cpt_timer20s;
 uint8_t cpt_message;
 uint8_t mess_pay[100];
 
+uint8_t i2c_init;
+
 #if CODE_TYPE == 'B'
 	uint16_t temp;  // /10 + 100
 	uint8_t hygro;
@@ -117,6 +119,8 @@ const osThreadAttr_t Appli_Task_attributes = {
 	uint16_t Tint;
 	uint8_t ch_circulateur;
 	uint8_t consigne_regulation;
+	uint16_t heure_der_temp;
+	uint16_t cpt_temp_recu;
 	#endif
 
 void LORA_RXTsk(void *argument);
@@ -240,8 +244,137 @@ void init3()   // taches
 void init4(void)
 {
 
-    init_functions4();  // watchdog, Log, eeprom
+
+	 uint8_t init=0;
+
+		  UART_SEND("Init0\n\r");
+	      osDelay(3000);
+		  UART_SEND("Init00\n\r");
+		  //HAL_Delay(3000);
+		  char messa[20];
+
+		  if (init==0)
+		  {
+			  init=1;
+			  UART_SEND("Init2\n\r");
+
+
+			  messa[0] = 't';
+			  messa[1] = 'm';
+			  messa[2] = '1';
+			  messa[3] = '\n';
+			  messa[4] = '\r';
+			  messa[5] = 0;
+			  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+		      osDelay(100);
+			  //HDC1080_init();
+		  }
+
+		  uint32_t primask = __get_PRIMASK();
+			messa[0] = 'I';
+			messa[1] = '0';
+			messa[2] = ':';
+		      messa[3] = ((primask >> 12) & 0x0F) + '0';
+		      messa[4] = ((primask >> 8) & 0x0F) + '0';
+		      messa[5] = ((primask >> 4) & 0x0F) + '0';
+		      messa[6] = (primask & 0x0F) + '0';
+			messa[7] = '\n';
+			messa[8] = '\r';
+			messa[9] = 0;
+			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			osDelay(30);
+
+		  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
+		  {
+		      osDelay(1000);
+			  UART_SEND("HDC1080 NOT READY !\n\r");
+		  }
+		  else
+		  {
+		      osDelay(1000);
+			  UART_SEND("HDC1080 READY !\n\r");
+		  }
+	      osDelay(500);
+		  HAL_Delay(3000);
+
+		  uint16_t temp;
+		  uint8_t hygro=0;
+		  uint8_t ret = 0;
+		  //uint8_t ret = HDC1080_read_tempe_humid(&temp, &hygro);
+		  HDC1080_start_read_configuration_registerIT();
+
+		  osDelay(1000);
+		  temp = HDC1080_config_reg;
+
+	  	  messa[0] = ret+'0';
+	  	  messa[1] = 'C';
+	      messa[2] = ((temp >> 12) & 0x0F) + '0';
+	      messa[3] = ((temp >> 8) & 0x0F) + '0';
+	      messa[4] = ((temp >> 4) & 0x0F) + '0';
+	      messa[5] = (temp & 0x0F) + '0';
+	  	  messa[6] = ' ';
+	      messa[7] = ((hygro >>4) & 0x0F) + '0';
+	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[9] = '\n';
+	      messa[10] = '\r';
+	      messa[11] = 0;
+	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+	      osDelay(500);
+		  HAL_Delay(3000);
+
+		  temp=0;
+		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+		  //temp = HDC1080_read_temperature_humidity();
+
+	  	  messa[0] = ret+'0';
+	  	  messa[1] = 'T';
+	      messa[2] = ((temp >> 12) & 0x0F) + '0';
+	      messa[3] = ((temp >> 8) & 0x0F) + '0';
+	      messa[4] = ((temp >> 4) & 0x0F) + '0';
+	      messa[5] = (temp & 0x0F) + '0';
+	  	  messa[6] = ' ';
+	      messa[7] = ((hygro >>4) & 0x0F) + '0';
+	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[9] = '\n';
+	      messa[10] = '\r';
+	      messa[11] = 0;
+	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+		  HAL_Delay(5000);
+
+
+	/*char messa[20];
+	uint32_t a[7];
+
+	a[0] = HAL_GetTick();
+	osDelay(500);  // 500 ticks = 500ms
+	a[1] = HAL_GetTick();
+	a[2] = HAL_GetTick();
+	HAL_Delay(500);
+	a[3] = HAL_GetTick();
+	a[4] = HAL_GetTick();
+
+	for (uint8_t i=0; i<6; i++)
+	{
+		messa[0] = 't';
+		messa[1] = i + '0';
+		messa[2] = ':';
+	      messa[3] = ((a[i] >> 12) & 0x0F) + '0';
+	      messa[4] = ((a[i] >> 8) & 0x0F) + '0';
+	      messa[5] = ((a[i] >> 4) & 0x0F) + '0';
+	      messa[6] = (a[i] & 0x0F) + '0';
+		messa[7] = '\n';
+		messa[8] = '\r';
+		messa[9] = 0;
+		HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+		osDelay(30);
+	}*/
+
+    init_functions4();  // watchdog, Log_flash, eeprom
     MX_SubGHz_Phy_Init();  // init radio, mutex lora
+
 
   #if CODE_TYPE == 'C'
 	consigne_normale = 19*10;
@@ -737,6 +870,9 @@ void Appli_Tsk(void *argument)
     //LOG_INFO("Appli_Task started with watchdog protection");
 	//uint16_t event_count;
 
+	if (i2c_init)
+		LOG_INFO("i2c init : %i", i2c_init);
+
 	for(;;)
     {
         // Enregistrer un heartbeat pour le watchdog
@@ -887,6 +1023,11 @@ void Appli_Tsk(void *argument)
 				    watchdog_check_all_tasks(); // test watdchdog logiciel
 					//LOG_INFO("Refresh watchdog");
 				    break;
+				}
+				case EVENT_AlarmA: {
+					LOG_INFO("Alarme A");
+
+					break;
 				}
 				case EVENT_TIMER_24h: {
 					envoie_mess_ASC(param_def, "1Message periodique 24h\r\n");

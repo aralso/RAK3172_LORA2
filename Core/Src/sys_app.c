@@ -121,6 +121,7 @@ uint32_t HAL_GetTick(void)
     ret = TIMER_IF_GetTimerValue();
   }
   /* USER CODE BEGIN HAL_GetTick_2 */
+  ret =  uwTick;
 
   /* USER CODE END HAL_GetTick_2 */
   return ret;
@@ -133,6 +134,18 @@ void HAL_Delay(__IO uint32_t Delay)
 {
   /* TIMER_IF can be based on other counter the SysTick e.g. RTC */
   /* USER CODE BEGIN HAL_Delay_1 */
+	  uint32_t tickstart = HAL_GetTick();
+	  uint32_t wait = Delay;
+
+	  /* Add a freq to guarantee minimum wait */
+	  if (wait < HAL_MAX_DELAY)
+	  {
+	    wait += (uint32_t)(uwTickFreq);
+	  }
+
+	  while ((HAL_GetTick() - tickstart) < wait)
+	  {
+	  }
 
   /* USER CODE END HAL_Delay_1 */
   TIMER_IF_DelayMs(Delay);

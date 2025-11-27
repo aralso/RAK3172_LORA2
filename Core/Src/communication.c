@@ -1164,8 +1164,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			{
 				if ((message_in[5] == 'S') && (longueur_m == 6))   // CHLS  Lecture Statut
 				{
-                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
-                		   consigne_regulation, Tint, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
+					RTC_TimeTypeDef sTime;
+					RTC_DateTypeDef sDate;
+					HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+					HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+					uint16_t der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes - heure_der_temp;
+
+                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i(%imin) Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
+                		   consigne_regulation, Tint, der_temp, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
 				}
 				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
 				{
@@ -1193,7 +1199,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				{
 					uint16_t TempI = decod_asc8(message_in+6); // 5° à 25°
 					if ((TempI>=50) && (TempI<=250))
+					{
 						Tint = TempI;
+						RTC_TimeTypeDef sTime;
+						RTC_DateTypeDef sDate;
+						HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+						HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+						heure_der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes;
+					}
 				}
 				// forcage
 				if ((message_in[5] == 'F') && (longueur_m == 16))   // CHEFddddddddcc  Forcage chauffage

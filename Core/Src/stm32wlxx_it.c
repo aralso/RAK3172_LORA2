@@ -22,10 +22,14 @@
 #include "stm32wlxx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
+extern volatile uint16_t HDC1080_config_reg;
+extern uint8_t HDC1080_data_buffer[];
+extern volatile uint8_t HDC1080_read_done;
 
 /* USER CODE END TD */
 
@@ -61,10 +65,24 @@ extern LPTIM_HandleTypeDef hlptim1;
 extern LPTIM_HandleTypeDef hlptim2;
 extern LPTIM_HandleTypeDef hlptim3;
 extern UART_HandleTypeDef hlpuart1;
+extern RTC_HandleTypeDef hrtc;
 extern SUBGHZ_HandleTypeDef hsubghz;
 extern TIM_HandleTypeDef htim16;
 
 /* USER CODE BEGIN EV */
+
+void affich_erreur(void)
+{
+  __disable_irq();
+  const char* error_msg = "ERROR: System failure\r\n";
+  uint16_t len = strlen(error_msg);
+
+  // Envoi direct via HAL_UART
+  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 3000);
+  HAL_Delay(1000);
+
+  HAL_NVIC_SystemReset();
+}
 
 /* USER CODE END EV */
 
@@ -77,7 +95,7 @@ extern TIM_HandleTypeDef htim16;
 void NMI_Handler(void)
 {
   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-
+	affich_erreur();
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
    while (1)
@@ -92,6 +110,7 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+	affich_erreur();
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -107,6 +126,7 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
+	affich_erreur();
 
   /* USER CODE END MemoryManagement_IRQn 0 */
   while (1)
@@ -122,6 +142,7 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
   /* USER CODE BEGIN BusFault_IRQn 0 */
+	affich_erreur();
 
   /* USER CODE END BusFault_IRQn 0 */
   while (1)
@@ -137,6 +158,7 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
+	affich_erreur();
 
   /* USER CODE END UsageFault_IRQn 0 */
   while (1)
@@ -222,6 +244,15 @@ void I2C2_ER_IRQHandler(void)
   /* USER CODE END I2C2_ER_IRQn 1 */
 }
 
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+    if(hi2c->Instance == hi2c2.Instance) {
+        // Combiner les octets reçus
+        HDC1080_config_reg = (HDC1080_data_buffer[0] << 8) | HDC1080_data_buffer[1];
+        HDC1080_read_done = 1; // signaler la fin de lecture
+    }
+}
+
 /**
   * @brief This function handles LPUART1 Interrupt.
   */
@@ -276,6 +307,20 @@ void EXTI15_10_IRQHandler(void)
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
 
   /* USER CODE END EXTI15_10_IRQn 1 */
+}
+
+/**
+  * @brief This function handles RTC Alarms (A and B) Interrupt.
+  */
+void RTC_Alarm_IRQHandler(void)
+{
+  /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
+
+  /* USER CODE END RTC_Alarm_IRQn 0 */
+  HAL_RTC_AlarmIRQHandler(&hrtc);
+  /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
+
+  /* USER CODE END RTC_Alarm_IRQn 1 */
 }
 
 /**

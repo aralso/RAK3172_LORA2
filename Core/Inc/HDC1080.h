@@ -2,6 +2,7 @@
 
 
 extern I2C_HandleTypeDef hi2c2;
+extern volatile uint16_t HDC1080_config_reg;
 
 // affichage panneau LCD sharp LS013B7DH03
 
@@ -43,7 +44,8 @@ extern I2C_HandleTypeDef hi2c2;
 
 void HDC1080_init(void);
 void HDC1080_write_configuration_register(uint8_t value);
-uint16_t HDC1080_read_configutaion_register(void);
+uint16_t HDC1080_read_configuration_register(void);
+void HDC1080_start_read_configuration_registerIT(void);
 uint16_t HDC1080_read_manufacturer_ID(void);
 uint16_t HDC1080_read_device_ID(void);
 uint16_t HDC1080_read_serial_ID_H(void);

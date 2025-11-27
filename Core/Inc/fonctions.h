@@ -49,6 +49,7 @@ typedef enum  {
     EVENT_CAD_DONE,
     EVENT_LORA_TX_STEP,
     EVENT_LORA_ACK_TIMEOUT,
+	EVENT_AlarmA,
 	#if CODE_TYPE == 'C'
 		EVENT_TIMER_1min,
 		EVENT_TIMER_10min,

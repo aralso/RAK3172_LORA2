@@ -433,6 +433,19 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 	}
 }*/
 
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    event_t evt = { EVENT_AlarmA, 0, 1 };
+
+    if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+    {
+        code_erreur = ISR_callback;
+        err_donnee1 = 5;
+    }
+
+}
+
+
 // ISR pour l'appui sur le bouton PA14
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
