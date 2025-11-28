@@ -94,13 +94,6 @@ const osThreadAttr_t LORA_TX_Task_attributes = {
   .priority = (osPriority_t) osPriorityLow4,
   .stack_size = 256 * 4
 };
-/* Definitions for Appli_Task */
-osThreadId_t Appli_TaskHandle;
-const osThreadAttr_t Appli_Task_attributes = {
-  .name = "Appli_Task",
-  .priority = (osPriority_t) osPriorityNormal,
-  .stack_size = 600 * 4
-};
 
 #if CODE_TYPE == 'C'   // Moteur chaudière
 	uint8_t ch_debut[NB_MAX_PGM];   // debut de chauffe :heure par pas de 10 minutes
@@ -125,7 +118,6 @@ const osThreadAttr_t Appli_Task_attributes = {
 
 void LORA_RXTsk(void *argument);
 void LORA_TXTsk(void *argument);
-void Appli_Tsk(void *argument);
 void envoi_data (uint8_t nb_valeur);
 uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);
@@ -202,14 +194,7 @@ void init3()   // taches
 
     HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
-    /* creation of LORA_RX_Task */
-    //LORA_RX_TaskHandle = osThreadNew(LORA_RXTsk, NULL, &LORA_RX_Task_attributes);
 
-    /* creation of LORA_TX_Task */
-    //LORA_TX_TaskHandle = osThreadNew(LORA_TXTsk, NULL, &LORA_TX_Task_attributes);
-
-    /* creation of Appli_Task */
-    Appli_TaskHandle = osThreadNew(Appli_Tsk, NULL, &Appli_Task_attributes);
 
     /*char msgL[50];
 
@@ -243,134 +228,6 @@ void init3()   // taches
 // Apres KernelStart, dans Appli_task
 void init4(void)
 {
-
-
-	 uint8_t init=0;
-
-		  UART_SEND("Init0\n\r");
-	      osDelay(3000);
-		  UART_SEND("Init00\n\r");
-		  //HAL_Delay(3000);
-		  char messa[20];
-
-		  if (init==0)
-		  {
-			  init=1;
-			  UART_SEND("Init2\n\r");
-
-
-			  messa[0] = 't';
-			  messa[1] = 'm';
-			  messa[2] = '1';
-			  messa[3] = '\n';
-			  messa[4] = '\r';
-			  messa[5] = 0;
-			  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-
-		      osDelay(100);
-			  //HDC1080_init();
-		  }
-
-		  uint32_t primask = __get_PRIMASK();
-			messa[0] = 'I';
-			messa[1] = '0';
-			messa[2] = ':';
-		      messa[3] = ((primask >> 12) & 0x0F) + '0';
-		      messa[4] = ((primask >> 8) & 0x0F) + '0';
-		      messa[5] = ((primask >> 4) & 0x0F) + '0';
-		      messa[6] = (primask & 0x0F) + '0';
-			messa[7] = '\n';
-			messa[8] = '\r';
-			messa[9] = 0;
-			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-			osDelay(30);
-
-		  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
-		  {
-		      osDelay(1000);
-			  UART_SEND("HDC1080 NOT READY !\n\r");
-		  }
-		  else
-		  {
-		      osDelay(1000);
-			  UART_SEND("HDC1080 READY !\n\r");
-		  }
-	      osDelay(500);
-		  HAL_Delay(3000);
-
-		  uint16_t temp;
-		  uint8_t hygro=0;
-		  uint8_t ret = 0;
-		  //uint8_t ret = HDC1080_read_tempe_humid(&temp, &hygro);
-		  HDC1080_start_read_configuration_registerIT();
-
-		  osDelay(1000);
-		  temp = HDC1080_config_reg;
-
-	  	  messa[0] = ret+'0';
-	  	  messa[1] = 'C';
-	      messa[2] = ((temp >> 12) & 0x0F) + '0';
-	      messa[3] = ((temp >> 8) & 0x0F) + '0';
-	      messa[4] = ((temp >> 4) & 0x0F) + '0';
-	      messa[5] = (temp & 0x0F) + '0';
-	  	  messa[6] = ' ';
-	      messa[7] = ((hygro >>4) & 0x0F) + '0';
-	      messa[8] = (hygro & 0x0F) + '0';
-	      messa[9] = '\n';
-	      messa[10] = '\r';
-	      messa[11] = 0;
-	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-
-	      osDelay(500);
-		  HAL_Delay(3000);
-
-		  temp=0;
-		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
-		  //temp = HDC1080_read_temperature_humidity();
-
-	  	  messa[0] = ret+'0';
-	  	  messa[1] = 'T';
-	      messa[2] = ((temp >> 12) & 0x0F) + '0';
-	      messa[3] = ((temp >> 8) & 0x0F) + '0';
-	      messa[4] = ((temp >> 4) & 0x0F) + '0';
-	      messa[5] = (temp & 0x0F) + '0';
-	  	  messa[6] = ' ';
-	      messa[7] = ((hygro >>4) & 0x0F) + '0';
-	      messa[8] = (hygro & 0x0F) + '0';
-	      messa[9] = '\n';
-	      messa[10] = '\r';
-	      messa[11] = 0;
-	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-
-		  HAL_Delay(5000);
-
-
-	/*char messa[20];
-	uint32_t a[7];
-
-	a[0] = HAL_GetTick();
-	osDelay(500);  // 500 ticks = 500ms
-	a[1] = HAL_GetTick();
-	a[2] = HAL_GetTick();
-	HAL_Delay(500);
-	a[3] = HAL_GetTick();
-	a[4] = HAL_GetTick();
-
-	for (uint8_t i=0; i<6; i++)
-	{
-		messa[0] = 't';
-		messa[1] = i + '0';
-		messa[2] = ':';
-	      messa[3] = ((a[i] >> 12) & 0x0F) + '0';
-	      messa[4] = ((a[i] >> 8) & 0x0F) + '0';
-	      messa[5] = ((a[i] >> 4) & 0x0F) + '0';
-	      messa[6] = (a[i] & 0x0F) + '0';
-		messa[7] = '\n';
-		messa[8] = '\r';
-		messa[9] = 0;
-		HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-		osDelay(30);
-	}*/
 
     init_functions4();  // watchdog, Log_flash, eeprom
     MX_SubGHz_Phy_Init();  // init radio, mutex lora
@@ -548,6 +405,139 @@ void init4(void)
 
 }
 
+void test_i2c()
+{
+	 uint8_t init=0;
+
+		  UART_SEND("Init0\n\r");
+	      osDelay(3000);
+		  UART_SEND("Init00\n\r");
+		  HAL_Delay(1000);
+		  char messa[20];
+
+		  if (init==0)
+		  {
+			  init=1;
+			  UART_SEND("Init2\n\r");
+
+
+			  messa[0] = 't';
+			  messa[1] = 'm';
+			  messa[2] = '1';
+			  messa[3] = '\n';
+			  messa[4] = '\r';
+			  messa[5] = 0;
+			  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+		      osDelay(100);
+			  //HDC1080_init();
+		  }
+
+		  //uint32_t primask = __get_PRIMASK();
+		  uint16_t conf_reg;
+		  conf_reg = HDC1080_read_configuration_register();
+			messa[0] = 'T';
+			messa[1] = '0';
+			messa[2] = ':';
+		      messa[3] = ((conf_reg >> 12) & 0x0F) + '0';
+		      messa[4] = ((conf_reg >> 8) & 0x0F) + '0';
+		      messa[5] = ((conf_reg >> 4) & 0x0F) + '0';
+		      messa[6] = (conf_reg & 0x0F) + '0';
+			messa[7] = '\n';
+			messa[8] = '\r';
+			messa[9] = 0;
+			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			HAL_Delay(1000);
+
+
+		  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
+		  {
+		      osDelay(1000);
+			  UART_SEND("HDC1080 NOT READY !\n\r");
+		  }
+		  else
+		  {
+		      osDelay(1000);
+			  UART_SEND("HDC1080 READY !\n\r");
+		  }
+	      osDelay(500);
+		  HAL_Delay(3000);
+
+
+		  uint8_t hygro=0;
+		  uint8_t ret = 0;
+		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+		  //HDC1080_start_read_configuration_registerIT();
+
+		  //osDelay(1000);
+		  //temp = HDC1080_config_reg;
+
+	  	  messa[0] = ret+'0';
+	  	  messa[1] = 'C';
+	      messa[2] = ((temp >> 12) & 0x0F) + '0';
+	      messa[3] = ((temp >> 8) & 0x0F) + '0';
+	      messa[4] = ((temp >> 4) & 0x0F) + '0';
+	      messa[5] = (temp & 0x0F) + '0';
+	  	  messa[6] = ' ';
+	      messa[7] = ((hygro >>4) & 0x0F) + '0';
+	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[9] = '\n';
+	      messa[10] = '\r';
+	      messa[11] = 0;
+	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+	      osDelay(500);
+		  HAL_Delay(3000);
+
+		  temp=0;
+		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+		  //temp = HDC1080_read_temperature_humidity();
+
+	  	  messa[0] = ret+'0';
+	  	  messa[1] = 'T';
+	      messa[2] = ((temp >> 12) & 0x0F) + '0';
+	      messa[3] = ((temp >> 8) & 0x0F) + '0';
+	      messa[4] = ((temp >> 4) & 0x0F) + '0';
+	      messa[5] = (temp & 0x0F) + '0';
+	  	  messa[6] = ' ';
+	      messa[7] = ((hygro >>4) & 0x0F) + '0';
+	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[9] = '\n';
+	      messa[10] = '\r';
+	      messa[11] = 0;
+	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+		  HAL_Delay(5000);
+
+
+	/*char messa[20];
+	uint32_t a[7];
+
+	a[0] = HAL_GetTick();
+	osDelay(500);  // 500 ticks = 500ms
+	a[1] = HAL_GetTick();
+	a[2] = HAL_GetTick();
+	HAL_Delay(500);
+	a[3] = HAL_GetTick();
+	a[4] = HAL_GetTick();
+
+	for (uint8_t i=0; i<6; i++)
+	{
+		messa[0] = 't';
+		messa[1] = i + '0';
+		messa[2] = ':';
+	      messa[3] = ((a[i] >> 12) & 0x0F) + '0';
+	      messa[4] = ((a[i] >> 8) & 0x0F) + '0';
+	      messa[5] = ((a[i] >> 4) & 0x0F) + '0';
+	      messa[6] = (a[i] & 0x0F) + '0';
+		messa[7] = '\n';
+		messa[8] = '\r';
+		messa[9] = 0;
+		HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+		osDelay(30);
+	}*/
+
+}
 
 /**
  * @brief Configuration de LSE (TCXO externe)
@@ -861,7 +851,10 @@ void Appli_Tsk(void *argument)
 
   /* USER CODE BEGIN Appli_Tsk */
 
+    test_i2c();
+
     init4(); // watchdog, Log, eeprom, demarrage LPTIM1
+
 
     // Démarrer la surveillance watchdog pour cette tâche
   	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
@@ -870,8 +863,8 @@ void Appli_Tsk(void *argument)
     //LOG_INFO("Appli_Task started with watchdog protection");
 	//uint16_t event_count;
 
-	if (i2c_init)
-		LOG_INFO("i2c init : %i", i2c_init);
+	//if (i2c_init)
+	//	LOG_INFO("i2c init : %i", i2c_init);
 
 	for(;;)
     {
@@ -1067,6 +1060,20 @@ void Appli_Tsk(void *argument)
 				case EVENT_TIMER_Tempe: {  // Thermometre-hygro
 					LOG_INFO("timer mesure temp-hygro 5min");
 					#if CODE_TYPE == 'B'
+
+				      osDelay(1000);
+					  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
+					  {
+					      osDelay(1000);
+						  UART_SEND("HDC1080_2 NOT READY !\n\r");
+					  }
+					  else
+					  {
+					      osDelay(1000);
+						  UART_SEND("HDC1080_2 READY !\n\r");
+					  }
+				      osDelay(1500);
+
 						uint8_t ret = HDC1080_read_tempe_humid(&temp, &hygro);
 						if (ret)
 						{
