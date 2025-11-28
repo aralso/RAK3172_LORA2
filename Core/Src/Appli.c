@@ -126,6 +126,7 @@ uint32_t BSP_ADC_ReadChannels(uint32_t channel);
 void calcul_pid_vanne(void);
 void chgt_consigne(void);
 void pid_forcage_init(void);
+void lecture_temp_i2c(uint8_t);
 
 void init1()  // avant KernelInitialize
 {
@@ -410,9 +411,9 @@ void test_i2c()
 	 uint8_t init=0;
 
 		  UART_SEND("Init0\n\r");
-	      osDelay(3000);
+	      osDelay(500);
 		  UART_SEND("Init00\n\r");
-		  HAL_Delay(1000);
+		  HAL_Delay(500);
 		  char messa[20];
 
 		  if (init==0)
@@ -436,7 +437,7 @@ void test_i2c()
 		  //uint32_t primask = __get_PRIMASK();
 		  uint16_t conf_reg;
 		  conf_reg = HDC1080_read_configuration_register();
-			messa[0] = 'T';
+			messa[0] = 'C';
 			messa[1] = '0';
 			messa[2] = ':';
 		      messa[3] = ((conf_reg >> 12) & 0x0F) + '0';
@@ -447,21 +448,22 @@ void test_i2c()
 			messa[8] = '\r';
 			messa[9] = 0;
 			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
-			HAL_Delay(1000);
+			//HAL_Delay(500);
+		      osDelay(1000);
 
 
 		  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
 		  {
-		      osDelay(1000);
+		      osDelay(500);
 			  UART_SEND("HDC1080 NOT READY !\n\r");
 		  }
 		  else
 		  {
-		      osDelay(1000);
+		      osDelay(500);
 			  UART_SEND("HDC1080 READY !\n\r");
 		  }
 	      osDelay(500);
-		  HAL_Delay(3000);
+		  HAL_Delay(500);
 
 
 		  uint8_t hygro=0;
@@ -473,7 +475,7 @@ void test_i2c()
 		  //temp = HDC1080_config_reg;
 
 	  	  messa[0] = ret+'0';
-	  	  messa[1] = 'C';
+	  	  messa[1] = 'T';
 	      messa[2] = ((temp >> 12) & 0x0F) + '0';
 	      messa[3] = ((temp >> 8) & 0x0F) + '0';
 	      messa[4] = ((temp >> 4) & 0x0F) + '0';
@@ -487,7 +489,7 @@ void test_i2c()
 	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
 
 	      osDelay(500);
-		  HAL_Delay(3000);
+		  HAL_Delay(500);
 
 		  temp=0;
 		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
@@ -507,7 +509,7 @@ void test_i2c()
 	      messa[11] = 0;
 	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
 
-		  HAL_Delay(5000);
+		  HAL_Delay(500);
 
 
 	/*char messa[20];
@@ -539,6 +541,47 @@ void test_i2c()
 
 }
 
+void lecture_temp_i2c(uint8_t nb)
+{
+	  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
+	  {
+	      osDelay(500);
+		  UART_SEND("HDC1080 NOT READY !\n\r");
+	  }
+	  else
+	  {
+	      osDelay(500);
+		  UART_SEND("HDC1080 READY !\n\r");
+	  }
+    osDelay(500);
+	  //HAL_Delay(500);
+
+
+	  uint8_t hygro=0;
+	  uint8_t ret = 0;
+	  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+	  //HDC1080_start_read_configuration_registerIT();
+
+	  //osDelay(1000);
+	  //temp = HDC1080_config_reg;
+	  char messa[20];
+
+	  messa[0] = ret+'0';
+	  messa[1] = nb+'0';
+    messa[2] = ((temp >> 12) & 0x0F) + '0';
+    messa[3] = ((temp >> 8) & 0x0F) + '0';
+    messa[4] = ((temp >> 4) & 0x0F) + '0';
+    messa[5] = (temp & 0x0F) + '0';
+	  messa[6] = ' ';
+    messa[7] = ((hygro >>4) & 0x0F) + '0';
+    messa[8] = (hygro & 0x0F) + '0';
+    messa[9] = '\n';
+    messa[10] = '\r';
+    messa[11] = 0;
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+
+    osDelay(500);
+}
 /**
  * @brief Configuration de LSE (TCXO externe)
  * @retval HAL_StatusTypeDef: Statut de la configuration
@@ -851,10 +894,12 @@ void Appli_Tsk(void *argument)
 
   /* USER CODE BEGIN Appli_Tsk */
 
-    test_i2c();
+    //test_i2c();
+    //lecture_temp_i2c(1);
 
     init4(); // watchdog, Log, eeprom, demarrage LPTIM1
 
+    //lecture_temp_i2c(2);
 
     // Démarrer la surveillance watchdog pour cette tâche
   	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
@@ -865,6 +910,9 @@ void Appli_Tsk(void *argument)
 
 	//if (i2c_init)
 	//	LOG_INFO("i2c init : %i", i2c_init);
+	//lecture_temp_i2c(3);
+	//osDelay(8000);
+	//lecture_temp_i2c(4);
 
 	for(;;)
     {
@@ -1061,7 +1109,7 @@ void Appli_Tsk(void *argument)
 					LOG_INFO("timer mesure temp-hygro 5min");
 					#if CODE_TYPE == 'B'
 
-				      osDelay(1000);
+				      /*osDelay(1000);
 					  if (HAL_I2C_IsDeviceReady(&hi2c2, HDC1080_I2C_Address, 3, 100) != HAL_OK)
 					  {
 					      osDelay(1000);
@@ -1072,7 +1120,7 @@ void Appli_Tsk(void *argument)
 					      osDelay(1000);
 						  UART_SEND("HDC1080_2 READY !\n\r");
 					  }
-				      osDelay(1500);
+				      osDelay(1500);*/
 
 						uint8_t ret = HDC1080_read_tempe_humid(&temp, &hygro);
 						if (ret)
@@ -1084,13 +1132,15 @@ void Appli_Tsk(void *argument)
 						{
 							tempe[num_val_temp] = temp;
 							humid[num_val_temp] = hygro;
-							LOG_INFO("Temp:%i Hygro:%i", temp, hygro);
+							int8_t temp_int = temp/100- 100;
+							uint8_t temp_vir = temp%100;
+							LOG_INFO("Temp:%i.%i Hygro:%i", temp_int, temp_vir, hygro);
 							num_val_temp++;
 
 							// envoi des données, quand la trame est complète
 							if (num_val_temp == nb_samples)
 							{
-								envoi_data(num_val_temp);
+								//envoi_data(num_val_temp);
 								num_val_temp = 0;  // nouvelle trame
 							}
 						}

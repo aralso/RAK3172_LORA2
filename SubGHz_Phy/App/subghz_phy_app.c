@@ -116,10 +116,10 @@ void SubghzApp_Init(void)
 	HAL_GPIO_Init(GPIOA, &gpio_init_structure);
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
 
-	gpio_init_structure.Pin = GPIO_PIN_11;
+	/*gpio_init_structure.Pin = GPIO_PIN_11;
 
 	HAL_GPIO_Init(GPIOA, &gpio_init_structure);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);*/
 
 
 	RadioEvents.CadDone = OnCadDone;
