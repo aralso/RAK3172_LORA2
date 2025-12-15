@@ -62,8 +62,6 @@ extern volatile uint8_t HDC1080_read_done;
 extern ADC_HandleTypeDef hadc;
 extern I2C_HandleTypeDef hi2c2;
 extern LPTIM_HandleTypeDef hlptim1;
-extern LPTIM_HandleTypeDef hlptim2;
-extern LPTIM_HandleTypeDef hlptim3;
 extern UART_HandleTypeDef hlpuart1;
 extern RTC_HandleTypeDef hrtc;
 extern SUBGHZ_HandleTypeDef hsubghz;
@@ -273,20 +271,6 @@ void LPTIM1_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles LPTIM2 Global Interrupt.
-  */
-void LPTIM2_IRQHandler(void)
-{
-  /* USER CODE BEGIN LPTIM2_IRQn 0 */
-
-  /* USER CODE END LPTIM2_IRQn 0 */
-  HAL_LPTIM_IRQHandler(&hlptim2);
-  /* USER CODE BEGIN LPTIM2_IRQn 1 */
-
-  /* USER CODE END LPTIM2_IRQn 1 */
-}
-
-/**
   * @brief This function handles EXTI Lines [15:10] Interrupt.
   */
 void EXTI15_10_IRQHandler(void)
@@ -312,20 +296,6 @@ void RTC_Alarm_IRQHandler(void)
   /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
 
   /* USER CODE END RTC_Alarm_IRQn 1 */
-}
-
-/**
-  * @brief This function handles LPTIM3 Global Interrupt.
-  */
-void LPTIM3_IRQHandler(void)
-{
-  /* USER CODE BEGIN LPTIM3_IRQn 0 */
-
-  /* USER CODE END LPTIM3_IRQn 0 */
-  HAL_LPTIM_IRQHandler(&hlptim3);
-  /* USER CODE BEGIN LPTIM3_IRQn 1 */
-
-  /* USER CODE END LPTIM3_IRQn 1 */
 }
 
 /**

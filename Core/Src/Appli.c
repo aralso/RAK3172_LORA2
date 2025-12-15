@@ -10,7 +10,7 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
- v1.11 12/2025 : modif STOP freertos par timer LPTIM2
+ v1.11 12/2025 : modif STOP2 freertos par timer LPTIM1
  v1.10 11/2025 : divers bugs lora, vrefInt
  v1.9 11/2025 : process LORA RX-TX, hdc1080, VRefInt, i2c(temp)
  v1.8 10/2025 : envoi subghz ok
@@ -30,15 +30,14 @@ Alarm_RTC : interrupt toutes les 24 heures
 Conso en mode veille :
 Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 
-Conso en mode Stop1 : 7,3uA
-	Coeur Stop 1 (cpu+ram) : 4 uA  (en STOP2:1uA)
-	LSE 32kHz              : 0,7uA
+Conso en mode Stop2 : 2,7uA
+	Coeur Stop 2 (cpu+ram) : 0,7 uA  (en STOP1:+3uA)
+	LSE 32kHz              : 0,3uA
 	RTC (avec LSE)		   : 0,2uA
-	IWDG (LSI)			   : 0,8uA
-	LPUART1				   : 1uA (avec RX pullup : +2,5uA)
-	LPTIM2				   : 0,4uA
-	Radio en sleep		   : 1uA
-	GPIO, pwr			   : 0,5uA
+	IWDG (LSI)			   : 0,5uA
+	LPUART1				   : 0,7uA (avec RX pullup : +2,5uA)
+	LPTIM2				   : 0,2uA
+	Radio en sleep		   : 0,1uA
 
 Conso en MSI_range8 et HSI : 1,33mA
 */

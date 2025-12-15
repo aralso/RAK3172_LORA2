@@ -138,8 +138,8 @@ void SubghzApp_Init(void)
 
   lora_radio_init();
 
-  uint8_t radio_status;
-  if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
+  //uint8_t radio_status;
+  //if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
 	  //LOG_INFO("Radio status apres init : 0x%02X", radio_status);
 
 	  /*if (radio_status == 0x00) {
@@ -155,7 +155,7 @@ void SubghzApp_Init(void)
 			  LOG_INFO("Radio status après réveil: 0x%02X", radio_status);
 		  }
 	  }*/
-  }
+  //}
 
       // Démarrer la réception continue
   //Radio.Rx(0); // Timeout infini

@@ -1484,8 +1484,15 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               {
             	  // envoi à l'uart du end_node
         		  LOG_INFO("RSSI:%s node:%i", message_in, nodes[0].latestRssi);
-
               }
+		  }
+		  if ((message_in[2] == 'R') && (message_in[3] == 'E'))   // RE : Ecriture Radio
+		  {
+			  if ((message_in[4] == 'S') && (message_in[5] == 'l') &&(longueur_m==6))   // RESl : Passage radio en sleep
+			  {
+				  LOG_INFO("Radio Sleep");
+				  Radio.Sleep();
+			  }
           }
 
           // ******************************** SSSSSSSSSSSSSSSSSS  ********************

@@ -84,6 +84,10 @@ uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos );
 #include "communication.h"
 #endif
 
+void lptim2_schedule_ms(uint32_t delay)
+{
+
+}
 
 uint32_t RegionCommonGetBandwidth( uint32_t drIndex, const uint32_t* bandwidths )
 {
@@ -349,9 +353,10 @@ void configure_radio_parameters(void)
 			radio_TxParam.timeout);
 
 	// DR0:SF12 BW125   DR1:SF11 BW125   DR5:SF7 BW125   DR6:SF7 BW250    DR7:FSK
-    Radio.Sleep();
 
     LOG_INFO("Radio LoRa configuree: %i MHz ch:%i SF%i %i dBm", radio_TxParam.freq / 1000000, radio_TxParam.channel, radio_TxParam.SF, radio_TxParam.power);
+
+    //Radio.Sleep();
 
 	#ifdef END_NODE
 		nodes[0].adresse = ID_CONCENTRATOR;

@@ -10,11 +10,11 @@
 
 #include "stm32wlxx_hal.h"
 
-#define MODE_DEBUG  // permet de ne pas fermer la vanne 3 minutes à l'init
+//#define MODE_DEBUG  // permet de ne pas fermer la vanne 3 minutes à l'init
 
 #ifdef MODE_DEBUG
 	#define SANS_RADIO
-	//#define Sans_Watchdog
+	#define Sans_Watchdog
 	#define SANS_I2C
 #endif
 
@@ -25,7 +25,7 @@
 #define bouton_GPIO_Port GPIOA
 #define ID_CONCENTRATOR	'H'
 
-#define CODE_VERSION  "1.10"
+#define CODE_VERSION  "1.11"
 
 
 #define END_NODE   // sinon  Define CONCENTRATOR

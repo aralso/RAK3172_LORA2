@@ -129,7 +129,6 @@ typedef struct {
 #define WATCHDOG_CHECK_INTERVAL   20000    // Vérification toutes les 20 secondes
 
 extern LPTIM_HandleTypeDef hlptim1;
-extern LPTIM_HandleTypeDef hlptim2;
 extern QueueHandle_t Event_QueueHandle;
 extern uint8_t batt_avant; // mesure batterie avant transmission LORA
 extern uint8_t batt_apres; // mesure batterie apres transmission LORA

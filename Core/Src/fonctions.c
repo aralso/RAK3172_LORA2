@@ -302,7 +302,7 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
 	if (hlptim->Instance == LPTIM1)
     {
-		counter++;
+	/*	counter++;
 		if (g_tx_state == TX_IDLE) cpt_process_lora_tx = 0;
 		else cpt_process_lora_tx++;
 		if (cpt_process_lora_tx > 4)  // Envoi en cours depuis plus de 100 secondes
@@ -368,7 +368,7 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
 				code_erreur = ISR_callback; 		err_donnee1 = 6; }
 		}
-		#endif
+		#endif*/
 	 }
 
     // 10s par réveil LPTIM → incrémenter epoch secondes
@@ -1383,49 +1383,6 @@ void check_all_clocks(void)
     LOG_INFO("========================");
 }
 
-// Fonction de test du mode Stop
-void test_stop_mode(void)
-{
-    LOG_INFO("=== TEST MODE STOP ===");
-
-    uint32_t start_time = HAL_GetTick();
-
-    // Entrer en mode Stop manuellement
-    LOG_INFO("Entering Stop mode...");
-    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-
-    uint32_t end_time = HAL_GetTick();
-    uint32_t elapsed = end_time - start_time;
-
-    LOG_INFO("Exited Stop mode after %lu ms", elapsed);
-
-    if (elapsed < 10) {
-        LOG_ERROR("Stop mode NOT working - CPU stayed active!");
-    } else {
-        LOG_INFO("Stop mode working - CPU was in low power");
-    }
-}
-
-// Planification non bloquante via LPTIM2 pour sortie de STOP
-static void lptim2_program_ticks_and_enable(uint32_t ticks)
-{
-    if (ticks == 0) ticks = 1;
-    HAL_LPTIM_Counter_Stop_IT(&hlptim2);
-    __HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
-    __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
-    __HAL_LPTIM_RESET_COUNTER(&hlptim2);
-    __HAL_LPTIM_COMPARE_SET(&hlptim2, ticks);
-    __HAL_LPTIM_ENABLE_IT(&hlptim2, LPTIM_IT_CMPM);
-    HAL_LPTIM_Counter_Start_IT(&hlptim2, 0xFFFF);
-}
-
-
-void lptim2_schedule_ms(uint32_t delay_ms)
-{
-	uint32_t ticks = (delay_ms * 2048) / 1000;
-	if (ticks == 0) ticks = 1;  // Minimum 1 tick
-	lptim2_program_ticks_and_enable(ticks);
-}
 
 uint8_t decod_asc8 (uint8_t* index)
 {

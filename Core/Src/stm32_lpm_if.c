@@ -32,7 +32,7 @@
 
 void SystemClock_Config(void);
 
-extern LPTIM_HandleTypeDef hlptim2;
+extern LPTIM_HandleTypeDef hlptim1;
 
 /* Fréquence LSE = 32768 Hz */
 #define LSE_FREQUENCY 32768UL
@@ -86,7 +86,7 @@ const struct UTIL_LPM_Driver_s UTIL_PowerDriver =
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
-void EnterStop1WithLPTIM2(TickType_t xExpectedIdleTime);
+void EnterStopWithLPTIM(TickType_t xExpectedIdleTime);
 
 void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 {
@@ -99,11 +99,11 @@ void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 		return;
 	}
 	else
-	// Sinon : STOP1 classique avec LPTIM2
-		EnterStop1WithLPTIM2(xExpectedIdleTime);
+	// Sinon : STOP classique avec LPTIM1
+		EnterStopWithLPTIM(xExpectedIdleTime);
 }
 
-void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
+void EnterStopWithLPTIM(TickType_t  xExpectedIdleTime)
 {
     uint32_t reloadValue;
     TickType_t completeTickPeriods;
@@ -122,8 +122,8 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
     SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
 
     /* Conversion ticks FreeRTOS -> ticks LPTIM */
-    uint16_t lptim2_freq = LSE_FREQUENCY / 16;
-    reloadValue = ( lptim2_freq * xExpectedIdleTime) / configTICK_RATE_HZ;
+    uint16_t lptim_freq = LSE_FREQUENCY / 16;
+    reloadValue = ( lptim_freq * xExpectedIdleTime) / configTICK_RATE_HZ;
 
     if (reloadValue == 0)  reloadValue = 1;
     if( reloadValue > 0xFFFF )  reloadValue = 0xFFFF;
@@ -143,10 +143,10 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
     }
 
     /* Configuration LPTIM1 */
-    __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_ARRM);
-    __HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    __HAL_LPTIM_CLEAR_FLAG(&hlptim1, LPTIM_FLAG_ARRM);
+    __HAL_LPTIM_CLEAR_FLAG(&hlptim1, LPTIM_FLAG_CMPM);
 
-    HAL_LPTIM_TimeOut_Start_IT( &hlptim2, 0xFFFF, reloadValue);
+    HAL_LPTIM_TimeOut_Start_IT( &hlptim1, 0xFFFF, reloadValue);
 
     __enable_irq();
 
@@ -154,7 +154,7 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
     configPRE_SLEEP_PROCESSING( &xExpectedIdleTime );
 
     /* Entrée en STOP1 */
-    HAL_PWREx_EnterSTOP1Mode( PWR_STOPENTRY_WFI );
+    HAL_PWREx_EnterSTOP2Mode( PWR_STOPENTRY_WFI );
 
     /* -------------  STOP ---------------- Réveil ici */
 
@@ -165,9 +165,9 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
 
     completeTickPeriods = xExpectedIdleTime/2;
 
-    if (__HAL_LPTIM_GET_FLAG(&hlptim2, LPTIM_FLAG_CMPM) != RESET)
+    if (__HAL_LPTIM_GET_FLAG(&hlptim1, LPTIM_FLAG_CMPM) != RESET)
     { // Reveil par LPTIM2
-    	__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    	__HAL_LPTIM_CLEAR_FLAG(&hlptim1, LPTIM_FLAG_CMPM);
     	completeTickPeriods = xExpectedIdleTime;
     }
     else
@@ -175,10 +175,10 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
         TickType_t elapsedRtosTicks;
 
         // Lire le compteur LPTIM
-        uint32_t elapsedLptimTicks = hlptim2.Instance->CNT;
+        uint32_t elapsedLptimTicks = hlptim1.Instance->CNT;
 
         // Convertir LPTIM ticks -> FreeRTOS ticks
-        elapsedRtosTicks = (elapsedLptimTicks * configTICK_RATE_HZ) / lptim2_freq;
+        elapsedRtosTicks = (elapsedLptimTicks * configTICK_RATE_HZ) / lptim_freq;
 
         // Sécurité
         if (elapsedRtosTicks > xExpectedIdleTime)
@@ -186,7 +186,7 @@ void EnterStop1WithLPTIM2(TickType_t  xExpectedIdleTime)
 
         completeTickPeriods = elapsedRtosTicks;
     }
-    HAL_LPTIM_TimeOut_Stop_IT(&hlptim2);
+    HAL_LPTIM_TimeOut_Stop_IT(&hlptim1);
 
     // Mise à jour du tick RTOS
     if (completeTickPeriods > LPTIM_STOP_COMPENSATION)

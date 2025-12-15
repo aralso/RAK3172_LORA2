@@ -249,30 +249,6 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
 
     /* USER CODE END LPTIM1_MspInit 1 */
   }
-  else if(hlptim->Instance==LPTIM2)
-  {
-    /* USER CODE BEGIN LPTIM2_MspInit 0 */
-
-    /* USER CODE END LPTIM2_MspInit 0 */
-
-  /** Initializes the peripherals clocks
-  */
-    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LPTIM2;
-    PeriphClkInitStruct.Lptim2ClockSelection = RCC_LPTIM2CLKSOURCE_LSE;
-    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
-    {
-      Error_Handler();
-    }
-
-    /* Peripheral clock enable */
-    __HAL_RCC_LPTIM2_CLK_ENABLE();
-    /* LPTIM2 interrupt Init */
-    HAL_NVIC_SetPriority(LPTIM2_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(LPTIM2_IRQn);
-    /* USER CODE BEGIN LPTIM2_MspInit 1 */
-
-    /* USER CODE END LPTIM2_MspInit 1 */
-  }
   else if(hlptim->Instance==LPTIM3)
   {
     /* USER CODE BEGIN LPTIM3_MspInit 0 */
@@ -290,9 +266,6 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
 
     /* Peripheral clock enable */
     __HAL_RCC_LPTIM3_CLK_ENABLE();
-    /* LPTIM3 interrupt Init */
-    HAL_NVIC_SetPriority(LPTIM3_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(LPTIM3_IRQn);
     /* USER CODE BEGIN LPTIM3_MspInit 1 */
 
     /* USER CODE END LPTIM3_MspInit 1 */
@@ -322,20 +295,6 @@ void HAL_LPTIM_MspDeInit(LPTIM_HandleTypeDef* hlptim)
 
     /* USER CODE END LPTIM1_MspDeInit 1 */
   }
-  else if(hlptim->Instance==LPTIM2)
-  {
-    /* USER CODE BEGIN LPTIM2_MspDeInit 0 */
-
-    /* USER CODE END LPTIM2_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_LPTIM2_CLK_DISABLE();
-
-    /* LPTIM2 interrupt DeInit */
-    HAL_NVIC_DisableIRQ(LPTIM2_IRQn);
-    /* USER CODE BEGIN LPTIM2_MspDeInit 1 */
-
-    /* USER CODE END LPTIM2_MspDeInit 1 */
-  }
   else if(hlptim->Instance==LPTIM3)
   {
     /* USER CODE BEGIN LPTIM3_MspDeInit 0 */
@@ -343,9 +302,6 @@ void HAL_LPTIM_MspDeInit(LPTIM_HandleTypeDef* hlptim)
     /* USER CODE END LPTIM3_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_LPTIM3_CLK_DISABLE();
-
-    /* LPTIM3 interrupt DeInit */
-    HAL_NVIC_DisableIRQ(LPTIM3_IRQn);
     /* USER CODE BEGIN LPTIM3_MspDeInit 1 */
 
     /* USER CODE END LPTIM3_MspDeInit 1 */
@@ -386,14 +342,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     PA2     ------> LPUART1_TX
     PA3     ------> LPUART1_RX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_2;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF8_LPUART1;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_3;
+    GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
