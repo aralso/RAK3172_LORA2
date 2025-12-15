@@ -27,7 +27,6 @@
 #include <string.h>
 #include "stm32wlxx_hal_exti.h"
 
-extern uint8_t i2c_init;
 
 /* USER CODE END Includes */
 
@@ -99,6 +98,8 @@ void StartDefaultTask(void *argument);
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
+static void MX_GPIO_Init_modif(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -139,7 +140,7 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init();
+  MX_GPIO_Init_modif();
   MX_IWDG_Init();
   MX_RTC_Init();
   MX_LPUART1_UART_Init();
@@ -152,7 +153,9 @@ int main(void)
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-  MX_SUBGHZ_Init();
+  #ifndef SANS_RADIO
+	  MX_SUBGHZ_Init();
+  #endif
 
   init1();  // IT UArt, démarre LPTIM1, message "RAK Init"
   /* USER CODE END 2 */
@@ -336,7 +339,7 @@ static void MX_I2C2_Init(void)
 {
 
   /* USER CODE BEGIN I2C2_Init 0 */
-
+#if CODE_TYPE == 'B'
   /* USER CODE END I2C2_Init 0 */
 
   /* USER CODE BEGIN I2C2_Init 1 */
@@ -370,6 +373,7 @@ static void MX_I2C2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C2_Init 2 */
+#endif
 
   /* USER CODE END I2C2_Init 2 */
 
@@ -388,7 +392,7 @@ static void MX_IWDG_Init(void)
   /* USER CODE END IWDG_Init 0 */
 
   /* USER CODE BEGIN IWDG_Init 1 */
-
+#ifndef Sans_Watchdog
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
   hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
@@ -399,7 +403,7 @@ static void MX_IWDG_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN IWDG_Init 2 */
-
+#endif
   /* USER CODE END IWDG_Init 2 */
 
 }
@@ -654,13 +658,6 @@ static void MX_RTC_Init(void)
   {
     Error_Handler();
   }
-
-  /** Enable the WakeUp
-  */
-  if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 0, RTC_WAKEUPCLOCK_RTCCLK_DIV16, 0) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN RTC_Init 2 */
 
   /* USER CODE END RTC_Init 2 */
@@ -735,7 +732,7 @@ static void MX_GPIO_Init(void)
 
   // A14 : GPIO Output EXT14
 
-/*  //Configure GPIO pins : PBPin PBPin PBPin
+  //Configure GPIO pins : PBPin PBPin PBPin
   GPIO_InitStruct.Pin = LED1_Pin|LED2_Pin|LED3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -761,7 +758,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BUT3_GPIO_Port, &GPIO_InitStruct);
 
-  // EXTI interrupt init
+ /* // EXTI interrupt init
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
@@ -789,6 +786,43 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void MX_GPIO_Init_modif(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+
+    GPIO_InitStruct.Pin =
+        GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5 |
+        GPIO_PIN_6 | GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 |
+        GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12 |
+        GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_All;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin =
+        GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 |
+        GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7 |
+        GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 |
+        GPIO_PIN_12 | GPIO_PIN_13;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    __HAL_RCC_GPIOA_CLK_DISABLE();
+    __HAL_RCC_GPIOB_CLK_DISABLE();
+    __HAL_RCC_GPIOC_CLK_DISABLE();
+}
+
+void MX_ADC_Init_Public(void)
+{
+    MX_ADC_Init();
+}
 
 /* USER CODE END 4 */
 
@@ -807,6 +841,7 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+    vTaskSuspend(NULL);  // suspension définitive
     startDefTsk();
     osDelay(100);
   }

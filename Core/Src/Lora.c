@@ -34,6 +34,8 @@ uint8_t cpt_process_lora_tx = 0;
 struct lora_etat_s lora_etat;
 
 uint8_t test1;
+uint8_t cpt_g_tx_state;
+uint8_t prec_g_tx_state;
 
 lora_tx_state_t g_tx_state = TX_IDLE;
 uint8_t g_tx_class = 0;
@@ -53,12 +55,8 @@ uint8_t att_cad=0;
 	static uint16_t lora_head[1];
 	static uint16_t lora_tail[1];
 	uint8_t nb_nodes=0;
-	#define NB_MAX_NODES 1
-	#if CODE_TYPE == 'C'
-		nodes_t nodes[2];
-	#else
-		nodes_t nodes[1];
-	#endif
+	#define NB_MAX_NODES 2
+	nodes_t nodes[NB_MAX_NODES];
 #else
 	static uint8_t lora_buff[MESS_BUFFER_SIZE][3];  // class C, B, A
 	static uint16_t lora_head[3];
@@ -467,23 +465,24 @@ void lora_radio_init(void)
     configure_radio_parameters();
 
     // Déterminer la classe à partir du define CLASS
+    // Mettre la radio en reception
 #ifdef CLASS
-#if CLASS == LORA_CLASS_A
-    g_lora_class = LORA_CLASS_A;
-    Radio.Sleep();
-#elif CLASS == LORA_CLASS_B
-    g_lora_class = LORA_CLASS_B;
-    Radio.Sleep();
-#elif CLASS == LORA_CLASS_C
-    g_lora_class = LORA_CLASS_C;
-    Radio.Rx(0);
+	#if CLASS == LORA_CLASS_A
+		g_lora_class = LORA_CLASS_A;
+		Radio.Sleep();
+	#elif CLASS == LORA_CLASS_B
+		g_lora_class = LORA_CLASS_B;
+		Radio.Sleep();
+	#elif CLASS == LORA_CLASS_C
+		g_lora_class = LORA_CLASS_C;
+		Radio.Rx(0);
+	#else
+		g_lora_class = LORA_CLASS_B;
+		Radio.Sleep();
+	#endif
 #else
-    g_lora_class = LORA_CLASS_B;
-    Radio.Sleep();
-#endif
-#else
-    g_lora_class = LORA_CLASS_B;
-    Radio.Sleep();
+		g_lora_class = LORA_CLASS_B;
+		Radio.Sleep();
 #endif
 }
 
@@ -496,8 +495,35 @@ void lora_set_class(uint8_t lora_class)
 
 void lora_tx_state_step(void)
 {
-    LOG_INFO("tx:%i  rx:%i q_id:%i T1:%i", g_tx_state,  g_rx_state, g_tx_class, test1);
+    LOG_INFO("tx:%i  rx:%i q_id:%i T1:%i dest:%i", g_tx_state,  g_rx_state, g_tx_class, test1, g_tx_dest);
     test1=0;
+    // pour éviter de rester bloquer dans un état qui n'évolue pas
+    if (prec_g_tx_state == g_tx_state)
+    {
+    	cpt_g_tx_state++;
+    	if (cpt_g_tx_state > 15)
+    	{
+    		// g_tx_state bloqué
+    		//uint8_t cmd[2] = { 0x80, 0x00 };   // 0x80 = SetStandby, 0x00 = RC mode
+    		//HAL_SUBGHZ_ExecSetCmd(&hsubghz, cmd, 2);
+    		SUBGRF_SetStandby(STDBY_RC);
+    		//uint8_t clr_irq[3] = { 0x02, 0x00, 0x00 };  // ClearIrqStatus
+    		//HAL_SUBGHZ_ExecSetCmd(&hsubghz, clr_irq, 3);
+    		SUBGRF_ClearIrqStatus( IRQ_RADIO_ALL );
+    		code_erreur = LORA_tx_bloque;
+    		cpt_g_tx_state = 0;
+    		g_tx_state = 0;
+    		g_rx_state = 0;
+        	relance_radio_rx(0);  // RX ou sleep
+    		return;
+    	}
+    }
+    else // le statut change
+    {
+    	cpt_g_tx_state = 0;
+    	prec_g_tx_state = g_tx_state;
+    }
+
 
     switch (g_tx_state) {
     case TX_IDLE:
@@ -510,12 +536,12 @@ void lora_tx_state_step(void)
             {
                 g_tx_msg.param = g_tx_msg.param | (CLASS<<6);
 
-                //char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
-                //char *p = hex_str;
-                /*for (uint8_t i = 0; i < g_tx_msg.length; i++) {
+                char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+                char *p = hex_str;
+                for (uint8_t i = 0; i < g_tx_msg.length; i++) {
                     p += sprintf(p, "%02X ", g_tx_msg.data[i]);  // Espace entre chaque octet
                 }
-                LOG_INFO("tx: dest:%c lg:%i p:%02X %s", g_tx_msg.dest, g_tx_msg.length, g_tx_msg.param, hex_str);*/
+                LOG_INFO("tx: dest:%c lg:%i p:%02X %s", g_tx_msg.dest, g_tx_msg.length, g_tx_msg.param, hex_str);
 
             	msg_loaded = true;
                 nb_messages_envoyes ++;
@@ -524,7 +550,7 @@ void lora_tx_state_step(void)
             }
             else // pas/plus de message dans pile d'envoi
             {
-            	//LOG_INFO("dequeue ret:%i", ret);
+            	LOG_INFO("dequeue ret:%i", ret);
             	if (nb_messages_envoyes) // au moins 1 mess envoyé
             		fin_phase_transmission();
             	else  // aucun envoi
@@ -586,7 +612,7 @@ void lora_tx_state_step(void)
 
            // S'assurer que la radio est bien en STANDBY
            if (Radio.GetStatus() != RF_IDLE) {
-               Radio.Sleep();  // Force STANDBY
+               Radio.Standby(); //Sleep();  // Force SLEEP   TODO : verifier : plutot standby
                // Petit délai pour laisser le temps à la radio de se stabiliser
                osDelay(10);
            }
@@ -608,6 +634,8 @@ void lora_tx_state_step(void)
             p += sprintf(p, "%02X ", tx.payload[i]);  // Espace entre chaque octet
         }
         LOG_INFO("tx: dest:%c lg:%i p:%02X %s", tx.destAddr, tx.len, tx.param, hex_str);
+       /* SUBGRF_SetDioIrqParams(  IRQ_TX_DONE | IRQ_TX_TIMEOUT,
+            IRQ_TX_DONE | IRQ_TX_TIMEOUT,  IRQ_RADIO_NONE, IRQ_RADIO_NONE);   */
         lora_send_packet(&tx);
         break;
     }
@@ -638,6 +666,12 @@ void lora_tx_state_step(void)
         	Radio.Rx(RX_delai);
 			// Programmer le timeout ACK via LPTIM2 (non bloquant et compatible STOP)
 			//lptim2_schedule_ms(2000);
+        }
+        // mesure niveau batterie apres transmission max 1 fois par 24h
+        if (!mesure_batt_ok)
+        {
+        	mesure_batt_ok=1;
+        	batt_apres = GetBatteryLevel();
         }
         break; }
     case TX_ACK_RECU: { // success avec ack
@@ -728,15 +762,16 @@ void fin_phase_transmission()
 // =======
 void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 {
-	if (test_index < test_MAX)
-		test_tab[test_index++] = g_tx_state;
+	//if (test_index < test_MAX)
+	//	test_tab[test_index++] = g_tx_state;
 
-	if (g_rx_state == RX_WAIT_ACK_SENT)
+	if (g_rx_state == RX_WAIT_ACK_SENT)  // fin de transmission de l'envoi d'un Ack
 	{
 		test1=1;
 		relance_radio_rx(1);
 		if (mess_rx_dernier)  // dernier RX
 		{
+			g_rx_state = RX_IDLE;
 			g_tx_state = TX_IDLE;
 			uint8_t vide = mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest);  // 0:mess
 			if (!vide) // mess a envoyer
@@ -769,19 +804,20 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 // recoit : erreurs, autres dest, balise, ack, messages normaux et broadcast
 void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 {
+	// payload recue : [dest][reseau][My_Address][param][len][payload]
     (void)rssi; (void)snr;
     g_rx_state =  RX_MESS_RECU;
     lora_etat.radio_rx++;
 
 	char init_msg1[30];
-	init_msg1[0] = 'A';
+	init_msg1[0] = 'A';  // AA
 	init_msg1[1] = 'A';
 	init_msg1[2] = payload[0]; // H
-	init_msg1[3] = payload[1];
-	init_msg1[4] = payload[2]; // H
-	init_msg1[5] = (payload[3] >> 4) + '0';
-	init_msg1[6] = (payload[3] & 0x0F) + '0';
-	init_msg1[7] = payload[4]+'0'; // 6
+	init_msg1[3] = payload[1];  // reseau:# 0x23
+	init_msg1[4] = payload[2]; // emetteur
+	init_msg1[5] = (payload[3] >> 4) + '0';  // param
+	init_msg1[6] = (payload[3] & 0x0F) + '0'; // param
+	init_msg1[7] = payload[4]+'0'; // lg payload
 	memcpy(init_msg1+8, payload+5, payload[4]+1);
     uint16_t len1 = strlen(init_msg1);
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
@@ -818,7 +854,8 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
     // Détection balise: "BB" au début du payload
     bool is_beacon = (dest == LORA_BROADCAST_ADDR && len >= 2 && len <= 3 && payload[5] == 'B' && payload[6] == 'B');
     //if (!inIsr) {
-	if (is_beacon) {
+	if (is_beacon)
+	{
 		// Prochaine balise attendue dans 3 minutes (basé sur LPTIM epoch si dispo)
 		uint32_t now_s = lptim_get_seconds();
 		g_next_beacon_at_ms = (now_s * 1000) + 180000;
@@ -841,13 +878,12 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 	}
 	else  // Ack ou message recu
 	{
-		memcpy(message_recu.data, &payload[5], len);
 
 		// enregistrement du node
-		#ifndef END_NODE
-			uint8_t node_id = Node_id(payload[2]);
-			if(!node_id) // pas de node trouve => ajout
-			{
+		uint8_t node_id = Node_id(payload[2]);
+		if(!node_id) // pas de node trouve => ajout
+		{
+			#ifndef END_NODE
 				uint8_t err = ajout_node(payload[2]);
 				if (err) { code_erreur = erreur_nb_nodes_max; err_donnee1=payload[2]; }
 				else {
@@ -859,92 +895,98 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 						node_id++;
 					}
 				}
-			}
-			if (node_id)
-			{
-				node_id--;
-				nodes[node_id].latestRssi = rssi;
-				nodes[node_id].nb_recus++;
-			}
-		#else
-			nodes[0].latestRssi = rssi;
-			nodes[0].nb_recus++;
-		#endif
-
-		if (len==2 && payload[5]=='A' && payload[6]=='C')  // Ack recu
-		{
-			if (g_tx_state == TX_WAIT_ACK)
-				g_tx_state = TX_ACK_RECU;
-			else
-			{
-				code_erreur = erreur_LORA_TX;  // 3
-				err_donnee1 = 3;
-				err_donnee2 = g_tx_state;
-			}
-			g_rx_state = RX_IDLE;
-			relance_radio_rx(1);
-			event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 3;}
+			#endif
 		}
-		else //message normal
+		if (!node_id)  // pas de node trouve, ou bien pile pleine
 		{
-			rx_tx_apres = rx_tx_apres | (message_recu.param & 0x20);
+	    	relance_radio_rx(1);
+	    	g_rx_state = RX_IDLE;
+	        return;
+		}
+		else
+		{
+			node_id--;
+			nodes[node_id].latestRssi = rssi;
+			nodes[node_id].nb_recus++;
 
-			// Répondre ACK si requis
-			uint8_t ack=0;
-			if ((dest != LORA_BROADCAST_ADDR) && ((message_recu.param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
-				ack=1;
-				uint8_t ack[7] = { payload[2], ReseauAddr, My_Address, CLASS<<6,2,'A', 'C' };
-				mess_rx_dernier = message_recu.param & 1;
-				g_rx_state = RX_WAIT_ACK_SENT;
-				Radio.Send(ack, 7);
-			}
-			else
+			memcpy(message_recu.data, &payload[5], len);
+
+			if (len==2 && payload[5]=='A' && payload[6]=='C')  // Ack recu
 			{
-				if (message_recu.param & 1)  // dernier RX
-					g_rx_state = RX_IDLE;
-				else {
-					g_rx_state = RX_ATTENTE;  // attend message rx suivant
-		            lptim2_schedule_ms(RX_delai);
-				}
-				relance_radio_rx(1);
-			}
-
-			char init_msg1[] = "RXVIDE:xy\n\r";
-			init_msg1[7] = ack+'0';
-			init_msg1[8] = message_recu.param+'0';
-		    uint16_t len1 = strlen(init_msg1);
-		    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
-
-			// Traitement applicatif standard - nota :ack pas encore envoyé
-			event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
-			if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 4;}
-
-			if (!ack) // sinon attendre ack sent
-			{
-				if (message_recu.param & 1)  // dernier RX
+				if (g_tx_state == TX_WAIT_ACK)
+					g_tx_state = TX_ACK_RECU;
+				else
 				{
-					g_tx_state = TX_IDLE;
+					code_erreur = erreur_LORA_TX;  // 3
+					err_donnee1 = 3;
+					err_donnee2 = g_tx_state;
+				}
+				g_rx_state = RX_IDLE;
+				relance_radio_rx(1);
+				event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 3;}
+			}
+			else //message normal
+			{
+				rx_tx_apres = rx_tx_apres | (message_recu.param & 0x20);
 
-					uint8_t classe = 0;
-					#ifndef END_NODE
-						classe = nodes[node_id].class;
-					#endif
-					/*uint8_t vide = mess_LORA_dequeue_fictif(classe, payload[2]);  // 0:mess
+				// Répondre ACK si requis
+				uint8_t ack=0;
+				if ((dest != LORA_BROADCAST_ADDR) && ((message_recu.param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
+					ack=1;
+					uint8_t ack[7] = { payload[2], ReseauAddr, My_Address, CLASS<<6,2,'A', 'C' };
+					mess_rx_dernier = message_recu.param & 1;
+					g_rx_state = RX_WAIT_ACK_SENT;
+					Radio.Send(ack, 7);
+				}
+				else
+				{
+					if (message_recu.param & 1)  // dernier RX
+						g_rx_state = RX_IDLE;
+					else {
+						g_rx_state = RX_ATTENTE;  // attend message rx suivant
+						lptim2_schedule_ms(RX_delai);
+					}
+					relance_radio_rx(1);
+				}
 
-					char init_msg[] = "VIDE:xy\n\r";
-					init_msg[5] = vide+'0';
-					init_msg[6] = rx_tx_apres+'0';
-				    uint16_t len = strlen(init_msg);
-				    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);*/
+				char init_msg1[] = " RXVIDE:x yz\n\r";
+				init_msg1[8] = ack+'0';
+				init_msg1[10] = (message_recu.param >> 4) +'0';
+				init_msg1[11] = (message_recu.param & 0x0F) +'0';
+				uint16_t len1 = strlen(init_msg1);
+				HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
 
-					if ((rx_tx_apres)) // node en ecoute RX
+				// Traitement applicatif standard - nota :ack pas encore envoyé
+				event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
+				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 4;}
+
+				if (!ack) // sinon attendre ack sent
+				{
+					if (message_recu.param & 1)  // dernier RX
 					{
-						rx_tx_apres=0;
-						g_tx_class = classe;
-						g_tx_dest = payload[2];
-						event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-						if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 5;}
+						g_tx_state = TX_IDLE;
+
+						uint8_t classe = 0;
+						#ifndef END_NODE
+							classe = nodes[node_id].class;
+						#endif
+						/*uint8_t vide = mess_LORA_dequeue_fictif(classe, payload[2]);  // 0:mess
+
+						char init_msg[] = "VIDE:xy\n\r";
+						init_msg[5] = vide+'0';
+						init_msg[6] = rx_tx_apres+'0';
+						uint16_t len = strlen(init_msg);
+						HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);*/
+
+						if ((rx_tx_apres)) // node en ecoute RX
+						{
+							rx_tx_apres=0;
+							g_tx_class = classe;
+							g_tx_dest = payload[2];
+							event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+							if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 5;}
+						}
 					}
 				}
 			}
@@ -1330,7 +1372,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
     lora_head[q_id] = head_prov;
 
 	//osDelay(100);
-	//LOG_INFO("enqueuelora:head:%d tail:%d mess:%s len:%i dest:%c", lora_head[2], lora_tail[2], mess->data, mess->length, mess->dest);
+	LOG_INFO("enqueuelora:head:%d tail:%d mess:%s len:%i dest:%c", lora_head[q_id], lora_tail[q_id], mess->data, mess->length, mess->dest);
     //osDelay(100);
    	//UART_SEND("Send5\n\r");
     osMutexRelease(lora_bufferMutex);

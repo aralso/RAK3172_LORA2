@@ -17,8 +17,8 @@
 #include "radio.h"
 #include "stm32wlxx_hal_exti.h"
 #include "queue.h"
+#include "stm32wlxx_nucleo.h"
 
-#define WATCHDOG
 
 // Structure pour les événements
 typedef struct {
@@ -58,7 +58,7 @@ typedef enum  {
 	EVENT_LORA_RX_TEST
 } EventId_t;
 
-#define TIMER_PERIOD_MS  2000   // 50s
+#define TIMER_PERIOD_MS  50000   // 50s
 
 // Sources d'événements
 #define SOURCE_BUTTON           0x01
@@ -126,11 +126,16 @@ typedef struct {
 // Configuration du watchdog
 #define WATCHDOG_TIMEOUT_MS        22   // 60 secondes par défaut
 #define WATCHDOG_ERROR_THRESHOLD   3       // Nombre d'erreurs avant reset
-#define WATCHDOG_CHECK_INTERVAL    10000    // Vérification toutes les 10 secondes
+#define WATCHDOG_CHECK_INTERVAL   20000    // Vérification toutes les 20 secondes
 
 extern LPTIM_HandleTypeDef hlptim1;
 extern LPTIM_HandleTypeDef hlptim2;
 extern QueueHandle_t Event_QueueHandle;
+extern uint8_t batt_avant; // mesure batterie avant transmission LORA
+extern uint8_t batt_apres; // mesure batterie apres transmission LORA
+extern uint8_t mesure_batt_ok;
+
+extern TimerHandle_t HTimer_temp_period;
 
 #define test_MAX 20
 
@@ -159,9 +164,15 @@ uint32_t get_rtc_seconds_since_midnight(void);
 uint8_t decod_asc8 (uint8_t* index);
 uint16_t decod_asc16 (uint8_t* index);
 uint32_t decod_asc32 (uint8_t* index);
+uint8_t decod_dec8 (uint8_t* index);
+uint16_t decod_dec16 (uint8_t* index);
 void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max);
 float PIDd_Compute(PID_t *pid, float setpoint, float measurement);
 
+uint8_t GetBatteryLevel(void);
+uint16_t BSP_RAK5005_GetBatteryLevel(void);
+uint8_t GetInternalTemp(void);
+uint32_t BSP_ADC_ReadChannels(uint32_t channel);
 
 // Fonctions de diagnostic du reset
 void display_reset_cause(void);

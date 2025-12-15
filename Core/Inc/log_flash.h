@@ -62,6 +62,7 @@ uint16_t log_read(uint16_t debut_entry, uint16_t max_entries, uint8_t dest, uint
 //HAL_StatusTypeDef log_clear(void);
 HAL_StatusTypeDef log_get_stats(uint32_t* total_entries, uint32_t* free_space);
 HAL_StatusTypeDef LOG_Format(void);
+void RAZ_nb_max_log_write(void);
 
 /*__weak uint8_t log_write(uint8_t code, uint8_t c1, uint8_t c2, uint8_t c3, const char* message) { return 0; }
 __weak uint16_t log_read(uint16_t debut_entry, uint16_t max_entries, uint8_t dest, uint8_t type) { return 0; }

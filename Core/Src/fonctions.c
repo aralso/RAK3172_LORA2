@@ -38,6 +38,10 @@ uint8_t nb_reset=0;
 
 PID_t myPID;
 
+uint8_t batt_avant; // mesure batterie avant transmission LORA
+uint8_t batt_apres; // mesure batterie apres transmission LORA
+uint8_t mesure_batt_ok;  // permet de ne lire le niveau batterie qu'1 fois par 24h, apres transmission lora
+
 uint8_t test_index;
 uint8_t test_var;
 uint32_t test_tab[test_MAX];
@@ -67,18 +71,28 @@ static const char* watchdog_task_names[WATCHDOG_TASK_COUNT] = {
 };
 
 // Timers
+TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du watchdog
 TimerHandle_t HTimer_24h;
 TimerHandle_t HTimer_20min;
-TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du watchdog
-TimerHandle_t HTimer_M3voies;
+#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
+	TimerHandle_t HTimer_temp_period;
+	static void Timertemp_periodCallback(TimerHandle_t xTimer);
+#endif
+#if (CODE_TYPE == 'C')  // garches chaudiere moteur
+	TimerHandle_t HTimer_1min;
+	TimerHandle_t HTimer_10min;
+	TimerHandle_t HTimer_M3voies;
+	static void Timer1minCallback(TimerHandle_t xTimer);
+	static void Timer10minCallback(TimerHandle_t xTimer);
+	static void M3VoiesCallback(TimerHandle_t xTimer);
+#endif
 
+
+static void WatchdogTimerCallback(TimerHandle_t xTimer);
+static void Timer24hCallback(TimerHandle_t xTimer);
+static void Timer20minCallback(TimerHandle_t xTimer);
 
 void SystemClock_Config(void);
-
-//static void WatchdogTimerCallback(TimerHandle_t xTimer);
-//static void Timer24hCallback(TimerHandle_t xTimer);
-//static void Timer20minCallback(TimerHandle_t xTimer);
-void M3VoiesCallback(TimerHandle_t xTimer);
 
 void configure_uart_wakeup(void)
 {
@@ -93,19 +107,19 @@ void init_functions1(void)
 // Apres KernelInitialize : queue, mutex, timers
 void init_functions2(void)
 {
-	#if CODE_TYPE == 'C'
-		// Créer le timer de pilotage de la vanne 3 voies
-		HTimer_M3voies = xTimerCreate(
-			"M3VoiesTimer",                    // Nom
-			pdMS_TO_TICKS(1000), // Période 1 seconde
-			pdFALSE,                            // Auto-reload
-			(void*)0,                          // ID
-			M3VoiesCallback              // Callback
-		);
-	#endif
 
-	// creation timers
-	 /*HTimer_24h = xTimerCreate(
+	// creation timers : maximum 49 jours. minimum 1ms
+		// timer de raz watchdog hard et vérification du watchdog logiciel
+		HTimer_Watchdog = xTimerCreate(
+			"WatchdogTimer",                    // Nom
+			pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
+			pdTRUE,                            // Auto-reload
+			(void*)0,                          // ID
+			WatchdogTimerCallback              // Callback
+		);
+	    if (HTimer_Watchdog != NULL) xTimerStart(HTimer_Watchdog, 0);
+
+	/*	HTimer_24h = xTimerCreate(
 	        "Timer24h",                          // Nom
 	        24*3600*1000,     // Période en ticks
 	        pdTRUE,                             // Auto-reload
@@ -115,23 +129,44 @@ void init_functions2(void)
 	    if (HTimer_24h != NULL) xTimerStart(HTimer_24h, 0);
 
 
-		 HTimer_20min = xTimerCreate(
-		        "Timer20min",                          // Nom
-		        pdMS_TO_TICKS(TIMER_PERIOD_MS),     // Période en ticks
-		        pdTRUE,                             // Auto-reload
-		        (void*)0,                           // ID optionnel
-		        Timer20minCallback                     // Callback
-		    );
-		    if (HTimer_20min != NULL) xTimerStart(HTimer_20min, 0);
+		HTimer_20min = xTimerCreate(
+			"Timer20min",                          // Nom
+			pdMS_TO_TICKS(TIMER_PERIOD_MS),     // Période en ticks   50secondes
+			pdTRUE,                             // Auto-reload
+			(void*)0,                           // ID optionnel
+			Timer20minCallback                     // Callback
+		);
+		if (HTimer_20min != NULL) xTimerStart(HTimer_20min, 0);
 
-		// Créer le timer de vérification du watchdog
-		HTimer_Watchdog = xTimerCreate(
-			"WatchdogTimer",                    // Nom
-			pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
-			pdTRUE,                            // Auto-reload
-			(void*)0,                          // ID
-			WatchdogTimerCallback              // Callback
-		);*/
+
+		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
+			// timer 10 min pour lire thermometre
+			HTimer_temp_period = xTimerCreate( "Ttp", pdMS_TO_TICKS(1000),
+				pdTRUE,        // recurrent
+				NULL, Timertemp_periodCallback );
+		#endif
+
+	   	    UART_SEND("Timer4\n\r");*/
+
+		#if (CODE_TYPE == 'C')  // garches chaudiere moteur
+			// timer 1min pour calcul PID et pilotage vanne 3 voies
+			HTimer_1min = xTimerCreate( "T1min", pdMS_TO_TICKS(60000),
+				pdTRUE,        /* recurrent */
+				NULL, vTimer1minCallback );
+			if (HTimer_1min != NULL) xTimerStart(HTimer_1min, 0);
+
+			// timer 10 minutes : changement de consigne
+			HTimer_10min = xTimerCreate( "T10min", pdMS_TO_TICKS(600000),
+				pdTRUE,        /* recurrent */
+				NULL, vTimer10minCallback );
+			if (HTimer_10min != NULL) xTimerStart(HTimer_10min, 0);
+
+			// timer pour arreter moteur 3 voies
+			HTimer_M3voies = xTimerCreate( "T3voies", pdMS_TO_TICKS(60000),
+				pdFalse,        /* recurrent */
+				(void*)0, M3VoiesCallback );
+			if (HTimer_M3voies != NULL) xTimerStart(HTimer_M3voies, 0);
+		#endif
 
 }
 
@@ -163,20 +198,23 @@ void init_functions4(void)
 void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
 
-#ifdef mode_sleep
+/*#ifdef mode_sleep
 	if (*ulExpectedIdleTime >= 100)
     {
 
     	HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
     }
-#endif
+#endif*/
 }
 
 // Dans PostSleepProcessing
 void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
 
-#ifdef mode_sleep
+	//SystemClock_Config();
+    SystemCoreClockUpdate();
+
+    /*#ifdef mode_sleep
 	SystemClock_Config();
 	  (void) ulExpectedIdleTime;
 
@@ -191,7 +229,7 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 			verif_timout_uart_rx();  // ne fonctionne pas
 		}
 #endif
-     //*ulExpectedIdleTime = 0;
+     ulExpectedIdleTime = 0;*/
 }
 
 // Presleep :
@@ -227,6 +265,28 @@ void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
 
 //PWR_ExitStopMode();
 
+uint8_t GetBatteryLevel(void)
+{
+	//uint16_t batt_mv = BSP_RAK5005_GetBatteryLevel();
+	//LOG_INFO("niveau batt : %i mv", batt_mv);
+	uint16_t batt_mv = SYS_GetBatteryLevel();
+	LOG_INFO("niveau vref : %i mv", batt_mv);
+	// 2600:0  3300:255
+	if (batt_mv>2600)
+		return ((uint8_t) ((batt_mv-2600)/4));
+	else
+		return 0;
+}
+
+uint8_t GetInternalTemp(void)
+{
+	uint16_t int_Temp = BSP_ADC_ReadChannels(ADC_CHANNEL_TEMPSENSOR);
+	LOG_INFO("Temp interne : %i", int_Temp);
+	return (uint8_t)int_Temp;
+}
+
+
+
 void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 {
 	/*  char init_msg[] = "Tim\n\r";
@@ -237,6 +297,8 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
 	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
 
+	/*if (hlptim->Instance == LPTIM2)
+		UART_SEND("Reveil 3\n\r");*/
 
 	if (hlptim->Instance == LPTIM1)
     {
@@ -253,9 +315,9 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 			cpt_process_lora_tx = 0;
 
 		}
-		/*event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
+		event_t evt = { EVENT_TIMER_LPTIM, 0, 0 };
 		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-			code_erreur = ISR_callback; 	err_donnee1 = 1; }*/
+			code_erreur = ISR_callback; 	err_donnee1 = 1; }
 
 		#if (CODE_TYPE == 'C')  // garches chaudiere moteur
 			if (counter % 6 == 0) {  // Toutes les 60 secondes
@@ -271,10 +333,13 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 		#endif
 
 		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
-			if (counter % (temp_period/10) == 0) {  // Toutes les 30*10sec (5 minutes)
-				event_t evt = { EVENT_TIMER_Tempe, 0, 0 };
-				if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
-					code_erreur = ISR_callback; 		err_donnee1 = 7; }
+			if (temp_period>=10)
+			{
+				if (counter % (temp_period/10) == 0) {  // Toutes les 30*10sec (5 minutes)
+					event_t evt = { EVENT_TIMER_Tempe, 0, 0 };
+					if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+						code_erreur = ISR_callback; 		err_donnee1 = 7; }
+				}
 			}
 		#endif
 
@@ -307,8 +372,8 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 	 }
 
     // 10s par réveil LPTIM → incrémenter epoch secondes
-    lptim_epoch_s += 10;
-    lora_on_lptim1_10s_tick();
+    //lptim_epoch_s += 10;
+    //lora_on_lptim1_10s_tick();
 }
 
 // si g_tx_state == RX_RESPONSES => fin statut écoute
@@ -320,7 +385,11 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 
     if (hlptim->Instance == LPTIM2)
     {
-    	if (g_rx_state == RX_ATTENTE)  // message RX non recu
+    		//UART_SEND("Reveil 4\n\r");
+
+		//event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+		//xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+    	/*if (g_rx_state == RX_ATTENTE)  // message RX non recu
     	{
     		g_rx_state = RX_IDLE;
     	}
@@ -337,9 +406,9 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
     	{
 			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
 			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-    	}
-		__HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
-		__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
+    	}*/
+		//__HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
+		//__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
     }
 
     if (hlptim->Instance == LPTIM3)
@@ -374,50 +443,29 @@ uint32_t lptim_get_seconds(void)
     return lptim_epoch_s;
 }
 
-/*void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
+
+// -------------------------  CALLBACK TIMERS ----------------------------------------------
+
+
+static void WatchdogTimerCallback(TimerHandle_t xTimer)
 {
-	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
-
-    if (hlptim->Instance == LPTIM1) {
-
-        //BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        event_t evt = { EVENT_TIMER_LPTIM, 1, 2 }; // timer 1, evt2
-
-        if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
-        {
-            code_erreur = ISR_callback;
-            err_donnee1 = 4;
-        }
-
-        //portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    }
-}*/
-
-#if CODE_TYPE == 'C'
-	void M3VoiesCallback(TimerHandle_t xTimer)
+    //LOG_INFO("timer24h declenche");
+	event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
+	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{
-		LOG_INFO("3voies");
-		HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
-
-		event_t evt = { EVENT_TIMER_3Voies, 0, 0 };
-		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
-		{
-			LOG_ERROR("Event queue full - message lost");
-		}
+		code_erreur = Timer_callback; 		err_donnee1 = 1;
 	}
-#endif
+}
 
-/*static void Timer24hCallback(TimerHandle_t xTimer)
+static void Timer24hCallback(TimerHandle_t xTimer)
 {
     LOG_INFO("timer24h declenche");
 	event_t evt = { EVENT_TIMER_24h, 0, 0 };
 	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{
-	    LOG_ERROR("Event queue full - message lost");
+		code_erreur = Timer_callback; 		err_donnee1 = 2;
 	}
 }
-
 
 static void Timer20minCallback(TimerHandle_t xTimer)
 {
@@ -429,22 +477,62 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 	event_t evt = { EVENT_TIMER_20min, 0, 0 };
 	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{
-	    LOG_ERROR("Event queue full - message lost");
+		code_erreur = Timer_callback; 		err_donnee1 = 3;
 	}
-}*/
+}
+
+
+#if CODE_TYPE == 'B'
+	void Timertemp_periodCallback(TimerHandle_t xTimer)
+	{
+		event_t evt = { EVENT_TIMER_Tempe, 0, 0 };
+		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+			code_erreur = Timer_callback; 		err_donnee1 = 4; }
+	}
+#endif
+
+#if CODE_TYPE == 'C'
+	static void Timer1minCallback(TimerHandle_t xTimer)
+	{
+		event_t evt = { EVENT_TIMER_1min, 0, 0 };
+		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+		{
+			code_erreur = Timer_callback; 		err_donnee1 = 5;
+		}
+	}
+	static void Timer10minCallback(TimerHandle_t xTimer)
+	{
+		event_t evt = { EVENT_TIMER_10min, 0, 0 };
+		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+		{
+			code_erreur = Timer_callback; 		err_donnee1 = 6;
+		}
+	}
+	void M3VoiesCallback(TimerHandle_t xTimer)
+	{
+		LOG_INFO("3voies");
+		HAL_GPIO_WritePin(VALVE_CLOSE_GPIO, VALVE_CLOSE_PIN, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(VALVE_OPEN_GPIO, VALVE_OPEN_PIN, GPIO_PIN_RESET);
+
+		event_t evt = { EVENT_TIMER_3Voies, 0, 0 };
+		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+		{
+			code_erreur = Timer_callback; 		err_donnee1 = 7;
+		}
+	}
+#endif
+
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
-    event_t evt = { EVENT_AlarmA, 0, 1 };
+	event_t evt = { EVENT_AlarmA, 0, 1 };
 
-    if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
-    {
-        code_erreur = ISR_callback;
-        err_donnee1 = 5;
-    }
-
+	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+	{
+		code_erreur = ISR_callback;
+		err_donnee1 = 5;
+	}
 }
-
 
 // ISR pour l'appui sur le bouton PA14
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -548,6 +636,7 @@ void envoi_code_erreur (void)        // envoie l'erreur a dest_erreur_reset
 
     if (comptage_erreur < nb_erreurs_envoyees)  // 30 envoyees, 20 enregistrees
     {
+       log_write('E', code_erreur, err_donnee1, err_donnee2, "Erreur");
        i3 = 0;
        if (comptage_erreur < nb_erreurs_enregistrees)  enr_erreur[comptage_erreur]=code_erreur;
         comptage_erreur++;
@@ -641,7 +730,7 @@ void watchdog_init(void)
     }
 
 
-	#ifdef WATCHDOG
+	#ifndef Sans_Watchdog
 		/*if (HTimer_Watchdog != NULL) {
 			xTimerStart(HTimer_Watchdog, 0);
 			//LOG_INFO("Watchdog timer started");
@@ -697,18 +786,6 @@ void watchdog_set_timeout(watchdog_task_id_t task_id, uint32_t timeout_s)
     }
 }
 
-/**
- * @brief Callback du timer de watchdog
- */
-/*static void WatchdogTimerCallback(TimerHandle_t xTimer)
-{
-    //LOG_INFO("timer24h declenche");
-	event_t evt = { EVENT_WATCHDOG_CHECK, 0, 0 };
-	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
-	{
-	    LOG_ERROR("Event watch queue full - message lost");
-	}
-}*/
 
 /**
  * @brief Démarre la surveillance d'une tâche
@@ -1388,6 +1465,34 @@ uint32_t decod_asc32 (uint8_t* index)
 				val |= ((car-'0')<<(i*4));
 		else if (( car >='A') && ( car <= 'F'))
 				val |= ((car-'A'+10)<<(i*4));
+	}
+	return val;
+}
+
+uint8_t decod_dec8 (uint8_t* index)  // 3 caractères
+{
+	uint16_t val=0;
+	uint16_t mult=1;
+	for (uint8_t i=0; i<3; i++)
+	{
+		uint8_t car = *(index+2-i);
+		if (( car >='0') && ( car <= '9'))
+				val = val +  ((car-'0')*mult);
+		mult = mult * 10;
+	}
+	return val;
+}
+
+uint16_t decod_dec16 (uint8_t* index)  // 5 caractères
+{
+	uint16_t val=0;
+	uint16_t mult=1;
+	for (uint8_t i=0; i<5; i++)
+	{
+		uint8_t car = *(index+4-i);
+		if (( car >='0') && ( car <= '9'))
+				val = val +  ((car-'0')*mult);
+		mult = mult * 10;
 	}
 	return val;
 }

@@ -23,6 +23,7 @@
 
 #include "adc.h"
 
+
 /** @addtogroup BSP
   * @{
   */ 
@@ -249,7 +250,7 @@ BSP_ADC_ReadChannels(uint32_t channel)
   uint32_t ADCxConvertedValues = 0;
   ADC_ChannelConfTypeDef sConfig = {0};
 
-  //MX_ADC_Init();
+  MX_ADC_Init_Public();
 
   /* Start Calibration */
   if (HAL_ADCEx_Calibration_Start(&hadc) != HAL_OK)
@@ -260,7 +261,7 @@ BSP_ADC_ReadChannels(uint32_t channel)
   /* Configure Regular Channel */
   sConfig.Channel = channel;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLINGTIME_COMMON_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_160CYCLES_5; //ADC_SAMPLINGTIME_COMMON_1;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -284,8 +285,72 @@ BSP_ADC_ReadChannels(uint32_t channel)
   return ADCxConvertedValues;
 }
 
-uint16_t
-BSP_RAK5005_GetBatteryLevel(void)
+/*uint32_t ReadVBAT(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    // Activer la surveillance VBAT
+    HAL_SYSCFG_VREFBUF_VbatMonitoringCmd(ENABLE);
+
+    // Configurer le canal VBAT
+    sConfig.Channel = ADC_CHANNEL_VBAT;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLINGTIME_160CYCLES_5;
+    HAL_ADC_ConfigChannel(&hadc, &sConfig);
+
+    // Lancer conversion
+    HAL_ADC_Start(&hadc);
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+
+    uint32_t raw = HAL_ADC_GetValue(&hadc);
+
+    // raw -> tension ADC interne
+    float vadc = (float)raw * 3.0f / 4095.0f;
+
+    // tension batterie réelle
+    float vbat = vadc * 3.0f;
+
+    return (uint32_t)(vbat * 1000);   // en mV
+}*/
+
+uint16_t SYS_GetBatteryLevel(void)
+{
+  /* USER CODE BEGIN SYS_GetBatteryLevel_1 */
+
+  /* USER CODE END SYS_GetBatteryLevel_1 */
+  uint16_t batteryLevelmV = 0;
+  uint32_t measuredLevel = 0;
+
+  measuredLevel = BSP_ADC_ReadChannels(ADC_CHANNEL_VREFINT);
+
+  if (measuredLevel == 0)
+  {
+    batteryLevelmV = 0;
+  }
+  else
+  {
+    if ((uint32_t)*VREFINT_CAL_ADDR != (uint32_t)0xFFFFU)
+    {
+      /* Device with Reference voltage calibrated in production:
+         use device optimized parameters */
+      batteryLevelmV = __LL_ADC_CALC_VREFANALOG_VOLTAGE(measuredLevel,
+                                                        ADC_RESOLUTION_12B);
+    }
+    else
+    {
+      /* Device with Reference voltage not calibrated in production:
+         use generic parameters */
+      batteryLevelmV = (VREFINT_CAL_VREF * 1510) / measuredLevel;
+    }
+  }
+
+  return batteryLevelmV;
+  /* USER CODE BEGIN SYS_GetBatteryLevel_2 */
+
+  /* USER CODE END SYS_GetBatteryLevel_2 */
+}
+
+uint16_t BSP_RAK5005_GetBatteryLevel(void)
 {
   uint16_t batteryLevelmV = 0;
   uint32_t measuredLevel = 0;

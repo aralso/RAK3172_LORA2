@@ -10,7 +10,9 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
- v1.9 11/2025 : process LORA RX-TX, hdc1080, vbat_vtempInt
+ v1.11 12/2025 : modif STOP freertos par timer LPTIM2
+ v1.10 11/2025 : divers bugs lora, vrefInt
+ v1.9 11/2025 : process LORA RX-TX, hdc1080, VRefInt, i2c(temp)
  v1.8 10/2025 : envoi subghz ok
  v1.7 10/2025 : ok:hlpuart1, lptimer1, stop mode, bouton IR   en cours:subGhz
  v1.6 10/2025 : en cours : hlpuart1, lpTimer, boutton_IT, SubGhz_init, lowPower
@@ -20,6 +22,10 @@ TODO BUG : timer apres uart_rx, HLH
  v1.2 09/2025 : pile envoi uart, timer, code_erreur
  v1.1 09/2025 : STM32CubeMX + freertos+ subGhz+ Uart2+ RTC+ print_log+ event_queue
 
+LPTIM1 : interrup toutes les 10 secondes pour action watchdog, etc...
+LPTIM2 : timer freertos en mode stop
+LPTIM3 : timers expirés de la radio
+Alarm_RTC : interrupt toutes les 24 heures
 
 Conso en mode veille :
 Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
@@ -66,10 +72,9 @@ uint32_t last_save_time = 0;
 uint8_t cpt_timer20s;
 uint8_t cpt_message;
 uint8_t mess_pay[100];
+uint8_t Keepalive=1;
 
-uint8_t i2c_init;
-
-#if CODE_TYPE == 'B'
+#if CODE_TYPE == 'B'  // Thermometre chaudiere
 	uint16_t temp;  // /10 + 100
 	uint8_t hygro;
 	uint8_t nb_samples=1;
@@ -79,23 +84,7 @@ uint8_t i2c_init;
 	uint16_t temp_period;
 #endif
 
-
-/* Definitions for LORA_RX_Task */
-osThreadId_t LORA_RX_TaskHandle;
-const osThreadAttr_t LORA_RX_Task_attributes = {
-  .name = "LORA_RX_Task",
-  .priority = (osPriority_t) osPriorityLow,
-  .stack_size = 256 * 4
-};
-/* Definitions for LORA_TX_Task */
-osThreadId_t LORA_TX_TaskHandle;
-const osThreadAttr_t LORA_TX_Task_attributes = {
-  .name = "LORA_TX_Task",
-  .priority = (osPriority_t) osPriorityLow4,
-  .stack_size = 256 * 4
-};
-
-#if CODE_TYPE == 'C'   // Moteur chaudière
+#if CODE_TYPE == 'C'  // Vanne motorisee chaudiere
 	uint8_t ch_debut[NB_MAX_PGM];   // debut de chauffe :heure par pas de 10 minutes
 	uint8_t ch_fin[NB_MAX_PGM];   // fin de chauffe
 	uint8_t ch_type[NB_MAX_PGM];     // 0:tous les jours, 1:semaine, 2:week-end (2 bits)
@@ -114,15 +103,34 @@ const osThreadAttr_t LORA_TX_Task_attributes = {
 	uint8_t consigne_regulation;
 	uint16_t heure_der_temp;
 	uint16_t cpt_temp_recu;
-	#endif
+	uint16_t nb_mes_temp;  // 144 mesures de temp par jour
+	uint16_t nb_mes_temp24;  // précédentes mesures de temp par jour
+	uint16_t puis_chaud;
+	uint8_t puis_chaud24;
+	uint8_t batt_thermo_av;
+	uint8_t batt_thermo_ap;
+#endif
+
+
+/* Definitions for LORA_RX_Task */
+osThreadId_t LORA_RX_TaskHandle;
+const osThreadAttr_t LORA_RX_Task_attributes = {
+  .name = "LORA_RX_Task",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 256 * 4
+};
+/* Definitions for LORA_TX_Task */
+osThreadId_t LORA_TX_TaskHandle;
+const osThreadAttr_t LORA_TX_Task_attributes = {
+  .name = "LORA_TX_Task",
+  .priority = (osPriority_t) osPriorityLow4,
+  .stack_size = 256 * 4
+};
+
 
 void LORA_RXTsk(void *argument);
 void LORA_TXTsk(void *argument);
 void envoi_data (uint8_t nb_valeur);
-uint8_t GetBatteryLevel(void);
-uint16_t BSP_RAK5005_GetBatteryLevel(void);
-uint8_t GetInternalTemp(void);
-uint32_t BSP_ADC_ReadChannels(uint32_t channel);
 void calcul_pid_vanne(void);
 void chgt_consigne(void);
 void pid_forcage_init(void);
@@ -148,10 +156,10 @@ void init1()  // avant KernelInitialize
 
       init_functions1();
 
-      if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 20000) != HAL_OK)
+      /*if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 20000) != HAL_OK)
       {
         Error_Handler();
-      }
+      }*/
 
 
 	  /*if (HAL_LPTIM_TimeOut_Start_IT(&hlptim1, 8000,0) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
@@ -159,11 +167,8 @@ void init1()  // avant KernelInitialize
 	    Error_Handler();
 	  }*/
       /* Disable autoreload write complete interrupt */
-      __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
+      //__HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
 
-	#if CODE_TYPE == 'B'
-      temp_period = TEMP_PERIOD;
-	#endif
 }
 
 void init2()  // création queue, timer, semaphore
@@ -231,8 +236,33 @@ void init4(void)
 {
 
     init_functions4();  // watchdog, Log_flash, eeprom
-    MX_SubGHz_Phy_Init();  // init radio, mutex lora
+    log_write('R', 0, 0x00, 0x00, "Init");
 
+	#ifndef SANS_RADIO
+		MX_SubGHz_Phy_Init();  // init radio, mutex lora
+	#endif
+
+    // lecture parametres en EEPROM
+    // periode de lecture de temperature
+	#if CODE_TYPE == 'B'
+		uint8_t status = EEPROM_Read16(0, &temp_period);  // 0 ou 30 à 15000
+		if ((status==0) && ((temp_period ==0) || (temp_period < 15001)))
+			 LOG_INFO("periode temp: %isec", temp_period);
+		else
+		{
+			temp_period = TEMP_PERIOD;
+			EEPROM_Write16(0, temp_period);
+			LOG_INFO("Raz periode temp: val par defaut %is", temp_period);
+		}
+		if (temp_period)
+		{
+			if (HTimer_temp_period != NULL)
+			{
+				// change la periode et le démarre
+				xTimerChangePeriod( HTimer_temp_period, pdMS_TO_TICKS(temp_period*1000), 0 );
+			}
+		}
+	#endif
 
   #if CODE_TYPE == 'C'
 	consigne_normale = 19*10;
@@ -401,7 +431,7 @@ void init4(void)
 	  // HAL_LPTIM_OnePulse_Start_IT : 1 fois
 
 	  /* Disable autoreload write complete interrupt */
-	  __HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
+	  //__HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
 	  //__HAL_LPTIM_ENABLE_IT(&hlptim1, LPTIM_IT_CMPOK);
 
 }
@@ -466,23 +496,24 @@ void test_i2c()
 		  HAL_Delay(500);
 
 
-		  uint8_t hygro=0;
+		  uint16_t tempL;
+		  uint8_t hygroL=0;
 		  uint8_t ret = 0;
-		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+		  ret = HDC1080_read_tempe_humid(&tempL, &hygroL);
 		  //HDC1080_start_read_configuration_registerIT();
 
 		  //osDelay(1000);
-		  //temp = HDC1080_config_reg;
+		  //tempL = HDC1080_config_reg;
 
 	  	  messa[0] = ret+'0';
 	  	  messa[1] = 'T';
-	      messa[2] = ((temp >> 12) & 0x0F) + '0';
-	      messa[3] = ((temp >> 8) & 0x0F) + '0';
-	      messa[4] = ((temp >> 4) & 0x0F) + '0';
-	      messa[5] = (temp & 0x0F) + '0';
+	      messa[2] = ((tempL >> 12) & 0x0F) + '0';
+	      messa[3] = ((tempL >> 8) & 0x0F) + '0';
+	      messa[4] = ((tempL >> 4) & 0x0F) + '0';
+	      messa[5] = (tempL & 0x0F) + '0';
 	  	  messa[6] = ' ';
-	      messa[7] = ((hygro >>4) & 0x0F) + '0';
-	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[7] = ((hygroL >>4) & 0x0F) + '0';
+	      messa[8] = (hygroL & 0x0F) + '0';
 	      messa[9] = '\n';
 	      messa[10] = '\r';
 	      messa[11] = 0;
@@ -491,19 +522,19 @@ void test_i2c()
 	      osDelay(500);
 		  HAL_Delay(500);
 
-		  temp=0;
-		  ret = HDC1080_read_tempe_humid(&temp, &hygro);
-		  //temp = HDC1080_read_temperature_humidity();
+		  tempL=0;
+		  ret = HDC1080_read_tempe_humid(&tempL, &hygroL);
+		  //tempL = HDC1080_read_temperature_humidity();
 
 	  	  messa[0] = ret+'0';
 	  	  messa[1] = 'T';
-	      messa[2] = ((temp >> 12) & 0x0F) + '0';
-	      messa[3] = ((temp >> 8) & 0x0F) + '0';
-	      messa[4] = ((temp >> 4) & 0x0F) + '0';
-	      messa[5] = (temp & 0x0F) + '0';
+	      messa[2] = ((tempL >> 12) & 0x0F) + '0';
+	      messa[3] = ((tempL >> 8) & 0x0F) + '0';
+	      messa[4] = ((tempL >> 4) & 0x0F) + '0';
+	      messa[5] = (tempL & 0x0F) + '0';
 	  	  messa[6] = ' ';
-	      messa[7] = ((hygro >>4) & 0x0F) + '0';
-	      messa[8] = (hygro & 0x0F) + '0';
+	      messa[7] = ((hygroL >>4) & 0x0F) + '0';
+	      messa[8] = (hygroL & 0x0F) + '0';
 	      messa[9] = '\n';
 	      messa[10] = '\r';
 	      messa[11] = 0;
@@ -557,24 +588,25 @@ void lecture_temp_i2c(uint8_t nb)
 	  //HAL_Delay(500);
 
 
-	  uint8_t hygro=0;
+      uint16_t tempL=0;
+	  uint8_t hygroL=0;
 	  uint8_t ret = 0;
-	  ret = HDC1080_read_tempe_humid(&temp, &hygro);
+	  ret = HDC1080_read_tempe_humid(&tempL, &hygroL);
 	  //HDC1080_start_read_configuration_registerIT();
 
 	  //osDelay(1000);
-	  //temp = HDC1080_config_reg;
+	  //tempL = HDC1080_config_reg;
 	  char messa[20];
 
 	  messa[0] = ret+'0';
 	  messa[1] = nb+'0';
-    messa[2] = ((temp >> 12) & 0x0F) + '0';
-    messa[3] = ((temp >> 8) & 0x0F) + '0';
-    messa[4] = ((temp >> 4) & 0x0F) + '0';
-    messa[5] = (temp & 0x0F) + '0';
+    messa[2] = ((tempL >> 12) & 0x0F) + '0';
+    messa[3] = ((tempL >> 8) & 0x0F) + '0';
+    messa[4] = ((tempL >> 4) & 0x0F) + '0';
+    messa[5] = (tempL & 0x0F) + '0';
 	  messa[6] = ' ';
-    messa[7] = ((hygro >>4) & 0x0F) + '0';
-    messa[8] = (hygro & 0x0F) + '0';
+    messa[7] = ((hygroL >>4) & 0x0F) + '0';
+    messa[8] = (hygroL & 0x0F) + '0';
     messa[9] = '\n';
     messa[10] = '\r';
     messa[11] = 0;
@@ -897,9 +929,8 @@ void Appli_Tsk(void *argument)
     //test_i2c();
     //lecture_temp_i2c(1);
 
-    init4(); // watchdog, Log, eeprom, demarrage LPTIM1
+    init4(); // Radio, watchdog, Log, eeprom
 
-    //lecture_temp_i2c(2);
 
     // Démarrer la surveillance watchdog pour cette tâche
   	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
@@ -908,11 +939,6 @@ void Appli_Tsk(void *argument)
     //LOG_INFO("Appli_Task started with watchdog protection");
 	//uint16_t event_count;
 
-	//if (i2c_init)
-	//	LOG_INFO("i2c init : %i", i2c_init);
-	//lecture_temp_i2c(3);
-	//osDelay(8000);
-	//lecture_temp_i2c(4);
 
 	for(;;)
     {
@@ -962,8 +988,8 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_LORA_TX_STEP: {
-					LOG_INFO("TX_step");
-					lora_tx_state_step();
+					LOG_INFO("TX_step reveil ");
+					//lora_tx_state_step();
 					break;
 				}
 				case EVENT_LORA_RX: {
@@ -1060,19 +1086,56 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_WATCHDOG_CHECK: {
-					HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
-				    watchdog_check_all_tasks(); // test watdchdog logiciel
-					//LOG_INFO("Refresh watchdog");
+					#ifndef Sans_Watchdog
+						HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
+						watchdog_check_all_tasks(); // test watdchdog logiciel
+					#endif
+					LOG_INFO("Refresh watchdog");
 				    break;
 				}
 				case EVENT_AlarmA: {
-					LOG_INFO("Alarme A");
+					LOG_INFO("Alarme A : 19h");
+					RAZ_nb_max_log_write();
+					mesure_batt_ok=0;  // permet de lire le niveau batterie apres transmission
+					batt_avant = GetBatteryLevel();
+
+					if (Keepalive < KeepAlive)
+						Keepalive++;
+					else
+					{
+						Keepalive=1;
+
+						#if CODE_TYPE == 'B'  // thermometre
+							log_write('K', batt_avant, batt_apres, 0, "Keep");
+							// envoi message Temp vers vanne motorisée chaudiere  CHETxx
+							message.dest = 'J';
+							message.param = 0x10; //param_def;
+							message.type = 1;  // binaire
+							message.data[0] = message.dest | 0x80;
+							uint8_t i=2;
+							message.data[i++] = 'C';
+							message.data[i++] = 'H';
+							message.data[i++] = 'E';
+							message.data[i++] = 'K';
+							message.data[i++] = batt_avant;
+							message.data[i++] = batt_apres;
+							message.data[1] = i-3;
+							envoie_mess_bin(&message);
+						#endif
+
+						#if CODE_TYPE == 'C'  // vanne motoriséee
+							// enregistrement du nb de mesures de temp recues et puissance
+							nb_mes_temp24 = nb_mes_temp;
+							nb_mes_temp = 0;
+							puis_chaud24 = (uint8_t)(puis_chaud/144);
+
+							log_write('K', nb_mes_temp24, puis_chaud24, batt_thermo_ap, "Keep");
+						#endif
 
 					break;
 				}
 				case EVENT_TIMER_24h: {
-					envoie_mess_ASC(param_def, "1Message periodique 24h\r\n");
-
+					}
 					// Debug : afficher le temps restant avant la prochaine expiration
 					TickType_t expiry = xTimerGetExpiryTime(HTimer_24h);
 					TickType_t now = xTaskGetTickCount();
@@ -1130,19 +1193,31 @@ void Appli_Tsk(void *argument)
 						}
 						else
 						{
-							tempe[num_val_temp] = temp;
-							humid[num_val_temp] = hygro;
+							// envoi message Temp vers vanne motorisée chaudiere  CTxx (8 car)
+							message.dest = 'H';
+							message.type = 1;  // binaire
+							message.param = param_def; //10:Pas d'ack, pas RX apres.  30:pas d'ack, RX apres
+							message.data[0] = message.dest | 0x80;
+							uint8_t i=2;
+							message.data[i++] = 'C';
+							message.data[i++] = 'T';
+							message.data[i++] = temp >> 8;
+							message.data[i++] = temp & 0xFF;
+							message.data[1] = i-3;
+							envoie_mess_bin(&message);
+
 							int8_t temp_int = temp/100- 100;
 							uint8_t temp_vir = temp%100;
 							LOG_INFO("Temp:%i.%i Hygro:%i", temp_int, temp_vir, hygro);
+							/*tempe[num_val_temp] = temp;
+							humid[num_val_temp] = hygro;
 							num_val_temp++;
-
 							// envoi des données, quand la trame est complète
 							if (num_val_temp == nb_samples)
 							{
 								//envoi_data(num_val_temp);
 								num_val_temp = 0;  // nouvelle trame
-							}
+							}*/
 						}
 					#endif
 					break;
@@ -1345,23 +1420,6 @@ void envoi_data (uint8_t nb_valeur)
 #endif
 #endif
 
-uint8_t GetBatteryLevel(void)
-{
-	uint16_t batt_mv = BSP_RAK5005_GetBatteryLevel();
-	LOG_INFO("niveau batt : %i mv", batt_mv);
-	// 2600:0  3300:255
-	if (batt_mv>2600)
-		return ((uint8_t) ((batt_mv-2600)/4));
-	else
-		return 0;
-}
-
-uint8_t GetInternalTemp(void)
-{
-	uint16_t int_Temp = BSP_ADC_ReadChannels(ADC_CHANNEL_TEMPSENSOR);
-	LOG_INFO("Temp interne : %i", int_Temp);
-	return (uint8_t)int_Temp;
-}
 
 #if CODE_TYPE == 'C'  // Chaudiere - chauffage
 
@@ -1476,6 +1534,7 @@ void calcul_pid_vanne(void)
 			xTimerStart(HTimer_M3voies, 0);               // Lance le countdown
 	}
 	pos_prec = position;
+	puis_chaud += (uint8_t)(position);
 }
 
 // initialise la consigne de forcage

@@ -244,15 +244,6 @@ void I2C2_ER_IRQHandler(void)
   /* USER CODE END I2C2_ER_IRQn 1 */
 }
 
-void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
-{
-    if(hi2c->Instance == hi2c2.Instance) {
-        // Combiner les octets reçus
-        HDC1080_config_reg = (HDC1080_data_buffer[0] << 8) | HDC1080_data_buffer[1];
-        HDC1080_read_done = 1; // signaler la fin de lecture
-    }
-}
-
 /**
   * @brief This function handles LPUART1 Interrupt.
   */

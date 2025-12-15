@@ -15,6 +15,8 @@ static out_message_t bufferTx_log;
 uint8_t index_bufferTx;
 static log_header_flash_t header_f;
 
+static uint8_t nb_max_log_write;
+
 // Fonctions internes
 static HAL_StatusTypeDef log_read_page_header(uint8_t i);
 static HAL_StatusTypeDef log_write_page_header(uint8_t page_num);
@@ -28,7 +30,10 @@ static uint8_t log_write_final(const LogEntry* entry);
 
 //static uint32_t log_calculate_crc(const uint8_t *data, uint32_t length);
 
-
+void RAZ_nb_max_log_write(void)
+{
+	nb_max_log_write=0;
+}
 
 /**
  * @brief Initialise le système de logs flash
@@ -78,26 +83,32 @@ uint8_t log_write(uint8_t code, uint8_t c1, uint8_t c2, uint8_t c3, const char* 
 {
     LogEntry entry;
     
-    // Remplir la structure
-    entry.timestamp = get_rtc_timestamp(); //HAL_GetTick()/1000;  // en secondes
-    entry.code = code;
-    entry.c1 = c1;
-    entry.c2 = c2;
-    entry.c3 = c3;
-    
-    // Copier le message avec gestion intelligente de la terminaison
-    //uint8_t message_size = LOG_ENTRY_SIZE - 8;  // 8 octets pour le message
-    //uint8_t message_len = strlen(message);
-    
-    if (strlen(message) >= (LOG_ENTRY_SIZE - 8)) {
-        // Message de 8 caractères ou plus : copier les 8 premiers sans terminaison
-        memcpy(entry.message, message, (LOG_ENTRY_SIZE - 8));
-    } else {
-        // Message de moins de 8 caractères : copier avec terminaison null
-        strcpy(entry.message, message);
+    // limitation à 20 log_write par 24heures
+    if (nb_max_log_write < 20)
+    {
+    	nb_max_log_write++;
+
+		// Remplir la structure
+		entry.timestamp = get_rtc_timestamp(); //HAL_GetTick()/1000;  // en secondes
+		entry.code = code;
+		entry.c1 = c1;
+		entry.c2 = c2;
+		entry.c3 = c3;
+
+		// Copier le message avec gestion intelligente de la terminaison
+		//uint8_t message_size = LOG_ENTRY_SIZE - 8;  // 8 octets pour le message
+		//uint8_t message_len = strlen(message);
+
+		if (strlen(message) >= (LOG_ENTRY_SIZE - 8)) {
+			// Message de 8 caractères ou plus : copier les 8 premiers sans terminaison
+			memcpy(entry.message, message, (LOG_ENTRY_SIZE - 8));
+		} else {
+			// Message de moins de 8 caractères : copier avec terminaison null
+			strcpy(entry.message, message);
+		}
+		return log_write_final(&entry);
     }
-    
-    return log_write_final(&entry);
+    else return 1;
 }
 
 /**

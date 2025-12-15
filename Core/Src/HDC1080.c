@@ -1,4 +1,5 @@
 #include "HDC1080.h"
+#include "cmsis_os.h"
 
 
 void HDC1080_init(void)
@@ -284,7 +285,7 @@ uint8_t HDC1080_read_tempe_humid(uint16_t* temperature, uint8_t* humidity)
     if (ret != HAL_OK)  return 2;  // Si une erreur survient dans la transmission pour la température
 
     osDelay(HDC1080_conversion_delay*2);
-    HAL_Delay(HDC1080_conversion_delay*2);  // Attente de 20 ms pour la conversion de température
+    //HAL_Delay(HDC1080_conversion_delay*2);  // Attente de 20 ms pour la conversion de température
 
     // 3. Lire la température et humidite (Registre 0x00)
 	ret = HAL_I2C_Master_Receive(&hi2c2, HDC1080_I2C_Address, data_buffer, 4, 1000);

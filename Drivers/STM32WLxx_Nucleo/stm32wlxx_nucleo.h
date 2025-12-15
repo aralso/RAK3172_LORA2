@@ -296,6 +296,7 @@ void             BSP_PB_Callback(Button_TypeDef Button);
 void             BSP_PB_IRQHandler(Button_TypeDef Button);
 
 uint16_t		BSP_RAK5005_GetBatteryLevel(void);
+uint16_t 		SYS_GetBatteryLevel(void);
 
 int32_t			BSP_RAK5005_Init(void);
 int32_t			BSP_RAK5005_DeInit(void);

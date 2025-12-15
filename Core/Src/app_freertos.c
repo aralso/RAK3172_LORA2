@@ -52,17 +52,14 @@
 
 /* USER CODE END FunctionPrototypes */
 
-/* USER CODE BEGIN PREPOSTSLEEP */
-__weak void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
+/* USER CODE BEGIN VPORT_SUPPORT_TICKS_AND_SLEEP */
+__weak void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 {
-/* place for user code */
+  // Generated when configUSE_TICKLESS_IDLE == 2.
+  // Function called in tasks.c (in portTASK_FUNCTION).
+  // TO BE COMPLETED or TO BE REPLACED by a user one, overriding that weak one.
 }
-
-__weak void PostSleepProcessing(uint32_t *ulExpectedIdleTime)
-{
-/* place for user code */
-}
-/* USER CODE END PREPOSTSLEEP */
+/* USER CODE END VPORT_SUPPORT_TICKS_AND_SLEEP */
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */

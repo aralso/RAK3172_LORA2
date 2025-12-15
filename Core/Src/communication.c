@@ -18,6 +18,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include "radio_driver.h"
+
+uint32_t ReadVBAT(void);
 
 #ifdef END_NODE
 	#define nb_ligne_routage 2  //  0->Loop  1->Uart   Add+1->Uart
@@ -31,6 +34,23 @@
 			{'1', '1', 3, 0, 0, 0}, {'a','z',6,0,0},
 			{'I','Z',6,0}, {'A','G',3,0,0,0} };  // Passerelle RF (Q)
 #endif
+
+/* commandes reçues :
+	CHLxx : Chauffage : CHLS(statut), CHLF(forcage), CHLA(arret), CHLP(pgm)
+	CHExx : Chauffage : CT(Temp), CHEK(Keepalive thermo), CHEF(forcage), CHEA(arret), CHEP(pgm)
+	CETPxxxxx : Ecriture Temp period 0 à 15000sec(4h)
+
+	Statut
+	Radio :  SLRE : Etat radio (1:Stby_RC, 2:stdby_Xosc, 3:FS, 4:RX, 5:RX_cont, 6:RX_duty, 7:TX, sinon sleep)
+	Batterie : SLBa : batt avant et apres
+
+	Test de RSSI : sur Node: faire HSLO (-> RSLI -> RSSI)
+	    sur Node : 1SLRX1x : puissance TX:x
+
+	Valeurs Lect/Ecrit
+	VEPa : Param_def
+	VERe : Reset
+*/
 
 uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
               // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
@@ -49,6 +69,8 @@ QueueHandle_t in_message_queue;  // queue pour les messages entrants
 //TimerHandle_t timer_handles[2];
 uint32_t uart_timeout_rx;
 uint8_t uart_timeout_on;
+
+uint8_t init_heure=0;
 
 uint16_t cpt_rx_uart;
 
@@ -653,27 +675,29 @@ uint8_t envoie_routage( out_message_t* mess)  // envoi du message
 
 		   if (j==3)
 			   retc = mess_enqueue(mess); // Vers UART
-		   if (j==6)
-		   {
-			    //HAL_Delay(10);
-			    //char uart_msg[50];
-			    //snprintf(uart_msg, sizeof(uart_msg), "Lora1: %s \r\n", mess);
-			    //HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
-			    //HAL_Delay(10);
-			    //UART_SEND("Send1\n\r");
-			    retc = mess_LORA_enqueue(mess);
-		   }
-  		   if (j==7) {
-			    retc = mess_LORA_enqueue(mess);
-  			    mess->dest = table_routage[i][3];
-			    /*char uart_msg[50];
-			    snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
-			    HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
-			    HAL_Delay(10);*/
-			    //LOG_INFO("enqueue:%i", retc);
-			    //HAL_Delay(100);
-			  //retc = send_lora_message((const char*)mess, len,  table_routage[i][3]);
-  		   }
+		   #ifndef SANS_RADIO
+			   if (j==6)
+			   {
+					//HAL_Delay(10);
+					//char uart_msg[50];
+					//snprintf(uart_msg, sizeof(uart_msg), "Lora1: %s \r\n", mess);
+					//HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
+					//HAL_Delay(10);
+					//UART_SEND("Send1\n\r");
+					retc = mess_LORA_enqueue(mess);
+			   }
+			   if (j==7) {
+					mess->dest = table_routage[i][3];
+					retc = mess_LORA_enqueue(mess);
+					/*char uart_msg[50];
+					snprintf(uart_msg, sizeof(uart_msg), "Lora2: %s \r\n", mess);
+					HAL_UART_Transmit(&hlpuart1, (uint8_t*)uart_msg, strlen(uart_msg), 3000);
+					HAL_Delay(10);*/
+					//LOG_INFO("enqueue:%i", retc);
+					//HAL_Delay(100);
+				  //retc = send_lora_message((const char*)mess, len,  table_routage[i][3]);
+			   }
+		    #endif
  	  }
   }
   return retc;
@@ -1158,6 +1182,29 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		// ******************************** CCCCCCCCCCCCCCCCCCC  ********************
 
 		#if CODE_TYPE == 'C'  // Chaudiere chauffage
+
+        // temperature interieure
+		if ((message_in[2] == 'C') && (message_in[3] == 'T') && (longueur_m == 6))   // CTxx  Temperature interieure
+		{
+			uint16_t temp16 = (message_in[4] <<8) + message_in[5]; // 5° à 25°
+			uint8_t tempI = (uint8_t) (((float)(temp16)/100-100) * 10);
+
+			if ((tempI>=50) && (tempI<=254))
+			{
+				Tint = tempI;
+				RTC_TimeTypeDef sTime;
+				RTC_DateTypeDef sDate;
+				HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+				HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+				heure_der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes;
+				nb_mes_temp++;
+
+				int8_t temp_int = temp16/100- 100;
+				uint8_t temp_vir = temp16%100;
+				LOG_INFO("Temp:%i.%i temp8:%i", temp_int, temp_vir, tempI);
+			}
+		}
+
 		if ((message_in[2] == 'C') && (message_in[3] == 'H'))  // Chaudiere
 		{
 			if (message_in[4] == 'L')  // Lecture
@@ -1170,8 +1217,13 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 					uint16_t der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes - heure_der_temp;
 
-                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i(%imin) Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
-                		   consigne_regulation, Tint, der_temp, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
+                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i(%imin nb:%i) Puis:%i Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
+                		   consigne_regulation, Tint, der_temp, nb_mes_temp24, puis_chaud24, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
+				}
+				if ((message_in[5] == 'S') && (message_in[6] == '2') && (longueur_m == 7))   // CHLS2  Suite Lecture Statut
+				{
+                   envoie_mess_ASC(param_def, "%cCHLS2:Batt_avant:%i Batt_apres:%i Thermo:%i %i", message_in[1], \
+                		 batt_avant, batt_apres, batt_thermo_av, batt_thermo_ap );
 				}
 				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
 				{
@@ -1183,30 +1235,49 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				}
 				if ((message_in[5] == 'P') && (longueur_m == 6))   // CHLP  Planning chauffage
 				{
-					for (uint8_t i=0; i<NB_MAX_PGM; i++)
+					RTC_TimeTypeDef sTime;
+					RTC_DateTypeDef sDate;
+					HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+					HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+					uint16_t der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes - heure_der_temp;
+
+                   envoie_mess_ASC(param_def, "%cCHLS:Cons:%i Tint:%i(%imin nb:%i) Puis:%i Cons_norm:%i Cons_ap:%i 3V:%i", message_in[1], \
+                		   consigne_regulation, Tint, der_temp, nb_mes_temp24, puis_chaud24, consigne_normale, consigne_apres, (uint16_t)(pos_prec) );
+
+                   envoie_mess_ASC(param_def, "%cCHLS2:Batt_avant:%i Batt_apres:%i Thermo:%i %i", message_in[1], \
+                		 batt_avant, batt_apres, batt_thermo_av, batt_thermo_ap );
+
+                   envoie_mess_ASC(param_def, "%cCHLF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
+
+                   envoie_mess_ASC(param_def, "%cCHLA%i", message_in[1], ch_arret);
+
+                   for (uint8_t i=0; i<NB_MAX_PGM; i++)
 					{
 						if (ch_debut[i] != ch_fin[i])
 							envoie_mess_ASC(param_def, "%cCHLP%i%02X%02X%i%02X%02X", message_in[1], i, \
 									ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
 					}
 				}
+				if ((message_in[5] == 'T') && (longueur_m == 6))   // CHLTT  Lecture de tout
+				{
+					for (uint8_t i=0; i<NB_MAX_PGM; i++)
+					{
+						if (ch_debut[i] != ch_fin[i])
+							envoie_mess_ASC(param_def, "%cCHLP%i%02X%02X%i%02X%02X", message_in[1], i, \
+									ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
+					}
+
+				}
+
 
 			}
 			if (message_in[4] == 'E')  // Ecriture
 			{
-				// temperature interieure
-				if ((message_in[5] == 'T') && (longueur_m == 8))   // CHETxx  Temperature interieure
+				// KeepAlive
+				if ((message_in[5] == 'K') && (longueur_m == 8))   // CHEKxy  batt avant, batt apres
 				{
-					uint16_t TempI = decod_asc8(message_in+6); // 5° à 25°
-					if ((TempI>=50) && (TempI<=250))
-					{
-						Tint = TempI;
-						RTC_TimeTypeDef sTime;
-						RTC_DateTypeDef sDate;
-						HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-						HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-						heure_der_temp = sDate.Date*1440 + sTime.Hours*60 + sTime.Minutes;
-					}
+					batt_thermo_av = message_in[6];
+					batt_thermo_ap = message_in[7];
 				}
 				// forcage
 				if ((message_in[5] == 'F') && (longueur_m == 16))   // CHEFddddddddcc  Forcage chauffage
@@ -1228,6 +1299,18 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 						// Arret : bit 31  forcage_duree: 23 bits
 						EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
 					}
+				}
+				if ((message_in[5] == 'H') && (message_in[6] == 'G') && (longueur_m == 8))   // CHEHGx : Hors Gel
+				{
+				}
+				if ((message_in[5] == 'A') && (longueur_m == 7))   // CHECoxx
+				{
+				}
+				if ((message_in[5] == 'A') && (longueur_m == 7))   // CHEAx  Arret chauffage
+				{
+				}
+				if ((message_in[5] == 'A') && (longueur_m == 7))   // CHEAx  Arret chauffage
+				{
 				}
 				if ((message_in[5] == 'A') && (longueur_m == 7))   // CHEAx  Arret chauffage
 				{
@@ -1271,6 +1354,33 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		}
 		#endif
 
+        // periode lecture temperature interieure
+		if ((message_in[2] == 'C')  && (message_in[4] == 'T') && (message_in[5] == 'P'))   // CETPxxxxx  period lect Temperature interieure
+		{
+			if ((message_in[3] == 'E') && (longueur_m == 11))
+			{
+				uint16_t per_tmp = decod_dec16(message_in+6);
+				if ((per_tmp ==0) || ((per_tmp>29) && (per_tmp < 15001)))
+				{
+					#if CODE_TYPE == 'B'
+						temp_period = per_tmp;
+						envoie_mess_ASC(param_def, "%cPeriod Temp=%i", message_in[1], temp_period);
+						EEPROM_Write16(0, temp_period);
+						if (temp_period)
+							xTimerChangePeriod( HTimer_temp_period, pdMS_TO_TICKS(temp_period*1000), 0 );
+						else
+							xTimerStop(HTimer_temp_period, 0);
+					#endif
+				}
+			}
+			if ((message_in[3] == 'L') && (longueur_m == 6))  // CLTP lecture periode temp
+			{
+				#if CODE_TYPE == 'B'
+					envoie_mess_ASC(param_def, "%cPeriod Temp=%i", message_in[1], temp_period);
+				#endif
+			}
+		}
+
 		// ******************************** HHHHHHHHHHHHHHHHHHH  ********************
 
 		if ((message_in[2] == 'H'))
@@ -1292,6 +1402,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					memcpy(&timestamp, message_in + 5, 4);
 					LOG_INFO("HES:Timestamp: %08X", timestamp);
 					set_rtc_from_timestamp(timestamp);
+					if (init_heure==0)
+					{
+						init_heure=1;
+					    log_write('R', 1, 0x00, 0x00, "Init heu");
+					}
 				}
 		  }
 		  if (message_in[3] == 'L')
@@ -1313,14 +1428,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					memcpy (&message.data[i], &time, 4);
 					i += 4;
 					message.data[1] = i-3;
-					//envoie_mess_bin(&message);
+					envoie_mess_bin(&message);
 
-	                char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
+	                /*char hex_str[40];  // 2 chars par octet + 1 pour \0, ajustez selon tx.len
 	                char *p = hex_str;
 	                for (uint8_t j = 0; j < i; j++) {
 	                    p += sprintf(p, "%02X ", message.data[j]);  // Espace entre chaque octet
 	                }
-	                LOG_INFO("HES:time:%i lg:%i %s", time, i, hex_str);
+	                LOG_INFO("HES:time:%i lg:%i %s", time, i, hex_str);*/
 
 			  }
 		  }
@@ -1384,9 +1499,21 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             	  int8_t rssi = nodes[node_id].latestRssi;
                   envoie_mess_ASC(param_def, "%cRLSI %i", message_in[1], rssi);
               }
+			if ((message_in[4] == 'B') && (message_in[5] == 'a') && (longueur_m == 6))   // SLBa  Lecture batterie
+			{
+			    batt_apres = GetBatteryLevel();
+
+			   	LOG_INFO("Batt VDDA: %d\r\n", batt_apres);
+			    envoie_mess_ASC(param_def, "%c Batt_avant:%i Batt_apres:%i ", message_in[1], batt_avant, batt_apres);
+			}
+
               if ( (message_in[4] =='V')  && (longueur_m==5))  // 1SLV : version-type
               {
-                  envoie_mess_ASC(param_def, "%cVer:%s Type:%c", message.data[0], CODE_VERSION, CODE_TYPE);
+				#ifdef CODE_TYPE
+            	  envoie_mess_ASC(param_def, "%cVer:%s Type:%c", message.data[0], CODE_VERSION, CODE_TYPE);
+				#else
+                  envoie_mess_ASC(param_def, "%cVer:%s", message.data[0], CODE_VERSION);
+				#endif
               }
               if ( (message_in[4] =='N') && (message_in[5] =='L') && (longueur_m==6))  // SLNL  Nodes Liste
   				      lecture_Nodes();
@@ -1407,7 +1534,10 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 
               if ( (message_in[4] =='R') && (message_in[5] =='E') && (longueur_m==6))  // SLRE  Radio Etat
               {
-          		LOG_INFO("Radio : Etat:%d Sleep:%d", hsubghz.State, hsubghz.DeepSleep);
+            	  RadioPhyStatus_t st = SUBGRF_GetStatus();
+            	  //st.Fields.ChipMode
+            	  //uint8_t mode = (status >> 4) & 0x07;
+          		  LOG_INFO("Radio : Etat:%i", st.Fields.ChipMode); //hsubghz.State, hsubghz.DeepSleep);
               }
               if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // SLRXxy Radio TX paramx = y
               {
@@ -1449,7 +1579,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("recep TL0");
                   envoie_mess_ASC(param_def, "%cOK", message_in[1]);
               }
-              if ((message_in[3] == 'T') && (longueur_m==4))  // 1TT => print test_tab
+              if ((message_in[4] == 'T') && (longueur_m==5))  // TLT => print test_tab
               {
             	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
             	  for (uint8_t i=0; i<test_index; i++)
@@ -1479,26 +1609,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
           }
           if ((message_in[2] == 'T') && (message_in[3] == 'E'))  // Tests
           {
-		      if ( (message_in[4] =='0')  && (longueur_m==7))  // LEcture Log 1TE001
-		      {
-			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
-			     LOG_INFO("Logs lus: %i", logs_read);
-		      }
-			  if ( (message_in[4] =='A')  && (longueur_m==7))  // 1TEAxx : envoi par lora vers node
+			  if ( (message_in[4] =='B')  && (longueur_m==7))  // 1TEB : envoi 1 mess par lora
 			  {
-				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
-                  envoie_mess_ASC(param_def, "UTL1");
+                  envoie_mess_ASC(param_def, "ITES");
 			  }
-			  if ( (message_in[4] =='B')  && (longueur_m==7))  // 1TEBxx : envoi 2 mess par lora
+			  if ( (message_in[4] =='C')  && (longueur_m==7))  // 1TECxx : envoi 2 mess par lora
 			  {
-				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
-                  envoie_mess_ASC(param_def, "UOKK");
-                  envoie_mess_ASC(param_def, "UBBB");
-			  }
-			  if ( (message_in[4] =='C')  && (longueur_m==7))  // 1TECxx : envoi 1 mess par lora
-			  {
-				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
-                  envoie_mess_ASC(param_def, "UTES");
+                  envoie_mess_ASC(param_def, "IBBB");
+                  envoie_mess_ASC(param_def, "ICCC");
 			  }
 			  if ( (message_in[4] =='D')  && (longueur_m==9))  // 1TEDxzyy : envoi 1 mess par lora
 			  {
@@ -1524,7 +1642,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				strncpy(short_message, (char*)message_in, 7);
 				short_message[7] = '\0';
 			    if (log_write('5', 0x01, 0x02, 0x03, short_message) == 0) {
-				  LOG_INFO("LOG écrit");
+				  LOG_INFO("LOG ecrit");
 			    }   else {
 				  LOG_ERROR("Erreur écriture LOG ");
 			    }
@@ -1542,14 +1660,9 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					LOG_ERROR("Erreur lecture EEPROM ");
 				}
 			  }
-			  if ( (message_in[4] =='S')  && (longueur_m==5))  // 1TES : envoi par lora vers concen
+			  if ( (message_in[4] =='S')  && (longueur_m==5))  // TES : envoi par lora vers concen
 			  {
                   envoie_mess_ASC(param_def, "HTL1");
-			  }
-			  if ( (message_in[4] =='T')  && (longueur_m==7))  // 1TETxy : param_def xy
-			  {
-				  param_def = (message_in[5]-'0')*16 + message_in[6]-'0';
-				 LOG_INFO("param : %02X", param_def);
 			  }
 			  if ( (message_in[4] =='U')  && (longueur_m==5))  // 1TEU : envoi 2 mess par lora
 			  {
@@ -1568,12 +1681,39 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  }
 
           }
-          if ((message_in[2] == 'T') && (message_in[3] == 'L'))  // Tests
+          if ((message_in[2] == 'T') && (message_in[3] == 'L'))  // Tests TL
           {
 		      if ( (message_in[4] =='1'))  // LEcture TL1
 		      {
 			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
 		      }
+		      if ( (message_in[4] =='L')  && (longueur_m==7))  // LEcture Log 1TLL01
+		      {
+			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
+			     LOG_INFO("Logs lus: %i", logs_read);
+		      }
+          }
+
+          // ********************************   VVVVVVVVVVVVVVVVV  ********************
+
+          if ((message_in[2] == 'V') && (message_in[3] == 'L'))  //  VL  Lecture Valeur
+          {
+			  if ( (message_in[4] =='P')  && (message_in[5] =='a') && (longueur_m==6))  // VLPa : LEcture param_def
+			  {
+				  envoie_mess_ASC(param_def, "%cParam : %02X", message_in[1], param_def);
+			  }
+          }
+          if ((message_in[2] == 'V') && (message_in[3] == 'E'))  //  VE Ecriture Valeur
+          {
+			  if ( (message_in[4] =='P') && (message_in[5] =='a') && (longueur_m==8))  // VEPaxx : modif param_def
+			  {
+				  param_def = (message_in[6]-'0')*16 + message_in[7]-'0';
+				  envoie_mess_ASC(param_def, "%cParam:%02X", message_in[1], param_def);
+			  }
+			  if ( (message_in[4] =='R') && (message_in[5] =='e') && (longueur_m==6))  // VERe : Reset
+			  {
+				  watchdog_reset_system();
+			  }
           }
 
       }

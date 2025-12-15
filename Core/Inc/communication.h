@@ -58,11 +58,13 @@
 #define erreur_queue_appli     0x25
 #define ISR_fifo_full		   0x26
 #define ISR_callback		   0x27
+#define Timer_callback		   0x28
 #define erreur_mess            0x2F
 #define erreur_LORA_TX		   0x30
 #define erreur_TO_LORA_TX	   0x31
 #define erreur_nb_nodes_max	   0x32
 #define depass_q_id 		   0x33
+#define LORA_tx_bloque		   0x34
 
 
 // Code erreur pour log_write :
