@@ -30,6 +30,16 @@ Alarm_RTC : interrupt toutes les 24 heures
 Conso en mode veille :
 Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 
+Conso en mode Stop1 : 7,3uA
+	Coeur Stop 1 (cpu+ram) : 4 uA  (en STOP2:1uA)
+	LSE 32kHz              : 0,7uA
+	RTC (avec LSE)		   : 0,2uA
+	IWDG (LSI)			   : 0,8uA
+	LPUART1				   : 1uA (avec RX pullup : +2,5uA)
+	LPTIM2				   : 0,4uA
+	Radio en sleep		   : 1uA
+	GPIO, pwr			   : 0,5uA
+
 Conso en MSI_range8 et HSI : 1,33mA
 */
 

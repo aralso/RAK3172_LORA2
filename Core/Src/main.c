@@ -140,12 +140,12 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init_modif();
+  MX_GPIO_Init();
   MX_IWDG_Init();
   MX_RTC_Init();
   MX_LPUART1_UART_Init();
   MX_LPTIM1_Init();
-  MX_ADC_Init();
+  //MX_ADC_Init();
   MX_LPTIM2_Init();
   MX_LPTIM3_Init();
   MX_I2C2_Init();
@@ -842,8 +842,8 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
     vTaskSuspend(NULL);  // suspension définitive
-    startDefTsk();
-    osDelay(100);
+    //startDefTsk();
+    //osDelay(100);
   }
   /* USER CODE END 5 */
 }
