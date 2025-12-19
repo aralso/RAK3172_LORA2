@@ -77,6 +77,8 @@ extern osThreadId_t Uart_TX_TaskHandle;
 void fin_phase_transmission();
 uint8_t analyse_queue_lora(uint8_t id);
 uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos );
+uint8_t Class(uint8_t g_tx_dest);
+void fin_phase_reception(void);
 
 
 // Configuration réseau
@@ -84,9 +86,68 @@ uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos );
 #include "communication.h"
 #endif
 
-void lptim2_schedule_ms(uint32_t delay)
+TimerHandle_t HTimer_loraTX;
+
+
+static void TimerloraTXCallback(TimerHandle_t xTimer)   // interruption
+{
+	event_t evt = { EVENT_TIMER_LORA_TX, 0, 0 };
+	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+	{
+		code_erreur = Timer_callback; 		err_donnee1 = 9;
+	}
+}
+
+// fin du timer HTimer_loraTX : tache appli
+void lora_timer_tx(void)
 {
 
+	// ack non recu apres transmission
+	if (g_tx_state == TX_WAIT_ACK)  // Ack non reçu
+	{
+		event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
+		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
+	}
+	else if (g_tx_state == RX_RESPONSES)  // message réponse non recu à la fin de la phase de TX =>
+	{
+		g_tx_state = TX_IDLE;   // Apres RX : pret à renvoyer des nouveaux messages
+		if ((Class(g_tx_dest)==0) || (rx_tx_apres))
+		{
+			if (mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest)==0)
+			{
+				event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+				xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+			}
+		}
+		else
+			fin_phase_reception();
+	}
+	else if (g_rx_state == RX_ATTENTE)  // message RX non recu => arret
+	{
+		g_rx_state = RX_IDLE;
+		if ((Class(g_tx_dest)==0) || (rx_tx_apres))
+		{
+			if (mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest)==0)
+			{
+				event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+				xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+			}
+		}
+		else
+			fin_phase_reception();
+	}
+	else // cas non prévu => étape suivante
+	{
+		event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
+		xQueueSendFromISR(Event_QueueHandle, &evt, 0);
+	}
+}
+
+// lancement timer pour étape d'apres, apres timer
+void timer_lora_ms(uint32_t delay)
+{
+	if (!delay) delay=50;
+	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(delay), 0 );
 }
 
 uint32_t RegionCommonGetBandwidth( uint32_t drIndex, const uint32_t* bandwidths )
@@ -248,6 +309,11 @@ uint8_t SendFrameModif( uint8_t channel )
 
 void configure_radio_parameters(void)
 {
+	// timer LORA_TX permettant de gérer les attentes durant TX
+	HTimer_loraTX = xTimerCreate( "T1min", pdMS_TO_TICKS(1000),
+		pdFALSE,        /* recurrent */
+		NULL, TimerloraTXCallback );
+
 
 	lora_bufferMutex = osMutexNew(NULL);
 	//LOG_INFO("mutex=%p", lora_bufferMutex);
@@ -354,9 +420,10 @@ void configure_radio_parameters(void)
 
 	// DR0:SF12 BW125   DR1:SF11 BW125   DR5:SF7 BW125   DR6:SF7 BW250    DR7:FSK
 
-    LOG_INFO("Radio LoRa configuree: %i MHz ch:%i SF%i %i dBm", radio_TxParam.freq / 1000000, radio_TxParam.channel, radio_TxParam.SF, radio_TxParam.power);
+	#ifdef mode_LPUART1
+		LOG_INFO("Radio LoRa configuree: %i MHz ch:%i SF%i %i dBm", radio_TxParam.freq / 1000000, radio_TxParam.channel, radio_TxParam.SF, radio_TxParam.power);
+	#endif
 
-    //Radio.Sleep();
 
 	#ifdef END_NODE
 		nodes[0].adresse = ID_CONCENTRATOR;
@@ -470,7 +537,7 @@ void lora_radio_init(void)
     configure_radio_parameters();
 
     // Déterminer la classe à partir du define CLASS
-    // Mettre la radio en reception
+    // Mettre la radio en reception ou sleep
 #ifdef CLASS
 	#if CLASS == LORA_CLASS_A
 		g_lora_class = LORA_CLASS_A;
@@ -500,7 +567,7 @@ void lora_set_class(uint8_t lora_class)
 
 void lora_tx_state_step(void)
 {
-    LOG_INFO("tx:%i  rx:%i q_id:%i T1:%i dest:%i", g_tx_state,  g_rx_state, g_tx_class, test1, g_tx_dest);
+    LOG_INFO("tx:%i  rx:%i q_id:%i T1:%i dest:%i head:%i", g_tx_state,  g_rx_state, g_tx_class, test1, g_tx_dest, lora_head[0]);
     test1=0;
     // pour éviter de rester bloquer dans un état qui n'évolue pas
     if (prec_g_tx_state == g_tx_state)
@@ -574,7 +641,8 @@ void lora_tx_state_step(void)
     	    if (irqStatus & (IRQ_PREAMBLE_DETECTED | IRQ_SYNCWORD_VALID | IRQ_HEADER_VALID)) {  // Radio en train de recevoir
     	    	att_cad = 1;
     	    	LOG_INFO("Wait:message en cours de RX");
-  	    		lptim2_schedule_ms(100);  // 100 millisecondes
+    	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(100), 0 );
+  	    		//timer_lora_ms(100);  // 100 millisecondes
     	    	break;
     	    }
     	 }
@@ -583,14 +651,16 @@ void lora_tx_state_step(void)
     	    // Radio en train d'émettre, attendre
 	    	att_cad = 2;
 	    	LOG_INFO("Wait:Radio en TX");
-    	    lptim2_schedule_ms(100);  // Attendre 100ms
+	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(100), 0 );
+    	    //timer_lora_ms(100);  // Attendre 100ms
     	    break;
     	}
     	if (g_rx_state >= RX_MESS_RECU)
     	{
 	    	att_cad = 5;
 	    	LOG_INFO("Wait:Radio en RX");
-    	    lptim2_schedule_ms(100);  // Attendre 100ms
+	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(100), 0 );
+	    	//timer_lora_ms(100);  // Attendre 100ms
     	    break;
     	}
     	//LOG_INFO("AAA");
@@ -607,7 +677,8 @@ void lora_tx_state_step(void)
                 uint32_t delay_ms = remaining_ms + 1000; // 1000ms après balise
     	    	att_cad = 3;
     	    	LOG_INFO("Wait:Balise proche");
-                lptim2_schedule_ms(delay_ms);
+    	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(delay_ms), 0 );
+    	    	//timer_lora_ms(delay_ms);
                 break;
             }
         }
@@ -619,7 +690,7 @@ void lora_tx_state_step(void)
            if (Radio.GetStatus() != RF_IDLE) {
                Radio.Standby(); //Sleep();  // Force SLEEP   TODO : verifier : plutot standby
                // Petit délai pour laisser le temps à la radio de se stabiliser
-               osDelay(10);
+               osDelay(3);
            }
         // vérifier si Canal libre
         Radio.StartCad();
@@ -668,15 +739,14 @@ void lora_tx_state_step(void)
         else // attendre ack requis
         {
 			g_tx_state = TX_WAIT_ACK;
-        	Radio.Rx(RX_delai);
-			// Programmer le timeout ACK via LPTIM2 (non bloquant et compatible STOP)
-			//lptim2_schedule_ms(2000);
+        	Radio.Rx(3000);
+	    	//xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(RX_delai), 0 );
         }
         // mesure niveau batterie apres transmission max 1 fois par 24h
         if (!mesure_batt_ok)
         {
         	mesure_batt_ok=1;
-        	batt_apres = GetBatteryLevel();
+        	//batt_apres = GetBatteryLevel();
         }
         break; }
     case TX_ACK_RECU: { // success avec ack
@@ -710,7 +780,7 @@ void lora_tx_state_step(void)
     		// nota : on pourrait ajouter un délai de 3 secondes avec lptim2
     		lora_etat.mess_renvoyes++;
 			g_tx_state = TX_WAIT_CAD;
-    	    //lptim2_schedule_ms(3000);  // Attendre 100ms
+    	    //timer_lora_ms(3000);  // Attendre 100ms
 			event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
 			xQueueSend(Event_QueueHandle, &evt, 0);
 		}
@@ -730,14 +800,30 @@ void lora_tx_state_step(void)
     	tx_rx_apres=0;
         if (g_lora_class == LORA_CLASS_C) {
         	Radio.Rx(0);
-            lptim2_schedule_ms(RX_delai);  // pour repasser ensuite en TX_IDLE
+	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(RX_delai), 0 );
+            //timer_lora_ms(RX_delai);  // pour repasser ensuite en TX_IDLE
         }
-        else Radio.Rx(RX_delai*3);
+        else  // TODO : pas clair
+        {
+          	Radio.Rx(0);
+    	   	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(RX_delai), 0 );
+        }
         //g_tx_state = TX_IDLE;
         break;
     }
     }
     LOG_INFO("            tx:%i  rx:%i", g_tx_state,  g_rx_state);
+}
+
+
+void fin_phase_reception(void)
+{
+	// fin phase reception
+	rx_tx_apres=0;
+	tx_rx_apres=0;
+	g_rx_state=RX_IDLE;
+	g_tx_state=TX_IDLE;
+	relance_radio_rx(0);
 }
 
 void fin_phase_transmission()
@@ -746,7 +832,8 @@ void fin_phase_transmission()
 	if (tx_rx_apres)
 	{
 		g_tx_state = RX_RESPONSES;
-		Radio.Rx(RX_delai);
+        timer_lora_ms(RX_delai);
+		Radio.Rx(0);
 	}
 	else // fin process TX_RX
 	{
@@ -755,7 +842,7 @@ void fin_phase_transmission()
 		// verif s'il faut redémarrer un nouveau process TX - un peu d'attente
 		if (mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest)==0)
 		{
-            lptim2_schedule_ms(RX_delai);
+            timer_lora_ms(RX_delai);
 		}
 	}
 	nb_messages_envoyes = 0;
@@ -788,7 +875,7 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 		else
 		{
 			g_rx_state = RX_ATTENTE;  // attend message suivant
-            lptim2_schedule_ms(RX_delai);
+            timer_lora_ms(RX_delai);
 		}
 		mess_rx_dernier=0;
 	}
@@ -814,9 +901,9 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
     g_rx_state =  RX_MESS_RECU;
     lora_etat.radio_rx++;
 
-	char init_msg1[30];
-	init_msg1[0] = 'A';  // AA
-	init_msg1[1] = 'A';
+	/*char init_msg1[30];
+	init_msg1[0] = 'R';  // AA
+	init_msg1[1] = 'x';
 	init_msg1[2] = payload[0]; // H
 	init_msg1[3] = payload[1];  // reseau:# 0x23
 	init_msg1[4] = payload[2]; // emetteur
@@ -824,8 +911,11 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 	init_msg1[6] = (payload[3] & 0x0F) + '0'; // param
 	init_msg1[7] = payload[4]+'0'; // lg payload
 	memcpy(init_msg1+8, payload+5, payload[4]+1);
+	init_msg1[8+payload[4]+1]='\r';
+	init_msg1[8+payload[4]+2]='\n';
+	init_msg1[8+payload[4]+3]=0;
     uint16_t len1 = strlen(init_msg1);
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);*/
 
 	//event_t evt = { EVENT_LORA_RX_TEST, SOURCE_LORA, size };
 	//if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 3;}
@@ -874,7 +964,7 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 		{
 			// Si c’est notre adresse, revient en RX continu pour recevoir le message
 			g_rx_state = RX_ATTENTE; // attend message
-            lptim2_schedule_ms(RX_delai);
+            timer_lora_ms(RX_delai);
 			relance_radio_rx(1);
 		}
 		else
@@ -912,7 +1002,6 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 		{
 			node_id--;
 			nodes[node_id].latestRssi = rssi;
-			nodes[node_id].nb_recus++;
 
 			memcpy(message_recu.data, &payload[5], len);
 
@@ -933,8 +1022,13 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 			}
 			else //message normal
 			{
+				nodes[node_id].nb_recus++;
 				rx_tx_apres = rx_tx_apres | (message_recu.param & 0x20);
 
+				if (g_tx_state == RX_RESPONSES)  // on reçoit une réponse apres la transmission
+				{
+					g_tx_state = RX_IDLE;
+				}
 				// Répondre ACK si requis
 				uint8_t ack=0;
 				if ((dest != LORA_BROADCAST_ADDR) && ((message_recu.param & 0x10) == 0)) { // bit4: ack non requis (0 => ACK requis)
@@ -944,13 +1038,16 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 					g_rx_state = RX_WAIT_ACK_SENT;
 					Radio.Send(ack, 7);
 				}
-				else
+				else  // Ack non requis
 				{
 					if (message_recu.param & 1)  // dernier RX
+					{
 						g_rx_state = RX_IDLE;
-					else {
+					}
+					else
+					{
 						g_rx_state = RX_ATTENTE;  // attend message rx suivant
-						lptim2_schedule_ms(RX_delai);
+						timer_lora_ms(RX_delai);
 					}
 					relance_radio_rx(1);
 				}
@@ -960,7 +1057,18 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 				init_msg1[10] = (message_recu.param >> 4) +'0';
 				init_msg1[11] = (message_recu.param & 0x0F) +'0';
 				uint16_t len1 = strlen(init_msg1);
-				HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
+				// ⭐ MESSAGE DISPONIBLE - Envoyer
+				/*for (int i = 0; i < 5; i++)  // securite si uart deja utilise ailleurs
+				{
+				    //vTaskDelay(5);
+					HAL_UART_StateTypeDef st = HAL_UART_GetState(&hlpuart1);
+				    if ((st == HAL_UART_STATE_READY) || (st == HAL_UART_STATE_BUSY_RX))
+				    {
+					HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
+			        break;
+				    }
+			    }*/
+
 
 				// Traitement applicatif standard - nota :ack pas encore envoyé
 				event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
@@ -1015,18 +1123,11 @@ void lora_on_tx_timeout(void)
 
 // ack non recu, pas de message à recevoir
 void lora_on_rx_timeout(void)
-{   // soit on attendait un Ack non reçu, soit on attendait un message non reçu
-	if (g_tx_state == TX_WAIT_ACK)  // Ack non reçu
-	{
-        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-    	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
-	}
-	else  // pas de message a recevoir => passage en transmission (ou arret si pas de message)
-	{
+{
+
+        event_t evt = { EVENT_ERROR, 3, g_tx_state };
 		g_tx_state = TX_IDLE;
-        event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
     	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 8;}
-	}
 }
 
 void lora_on_rx_error(void)
@@ -1060,7 +1161,11 @@ void relance_radio_rx(uint8_t actif)
     else
     {
     	if (actif)
-            Radio.Rx(RX_delai);
+    	{
+            Radio.Rx(0);
+            g_rx_state = RX_ATTENTE;
+	    	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(RX_delai), 0 );
+    	}
     	else
     		Radio.Sleep();
     }
@@ -1086,7 +1191,7 @@ void lora_tx_on_cad_result(bool channelBusy)
             }
             lora_etat.channel_busy++;
             uint32_t delay_ms = 2000 + (rand() % 2000); // entre 2 et 4 secondes
-            lptim2_schedule_ms(delay_ms);
+            timer_lora_ms(delay_ms);
             relance_rx(1);
 
             //g_tx_state = TX_IDLE;  // reste en TX_WAIT_CAD
@@ -1148,7 +1253,9 @@ void lora_handle_event_rx(void)
 void lora_handle_classb_beacon_event(void)
 {
     // Petite fenêtre pour détecter rapidement la balise
-    Radio.Rx(200);
+  	Radio.Rx(0);
+  	g_rx_state = RX_BALISE;
+   	xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(RX_delai), 0 );
 }
 
 uint8_t ajout_node(uint8_t emetteur)
@@ -1297,6 +1404,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
     if (lora_head[q_id] >= MESS_BUFFER_SIZE) {
             lora_head[q_id] = 0; // Reset si corruption
             lora_tail[q_id] = 0;
+            LOG_INFO("enqueue reset1");
     }
     uint32_t start_time = HAL_GetTick();
 
@@ -1418,7 +1526,10 @@ uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id, uint8_t dest)
 	uint8_t ret = mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
 
 	if (ret)
+	{
+		LOG_INFO("cherche : corruption2 :%i", ret);
 		return ret; // pas de correspondance
+	}
 	else
 	{
 		uint8_t size = lora_buff[pos][q_id];  // 1er octet
@@ -1437,7 +1548,8 @@ uint8_t mess_LORA_dequeue(out_message_t* mess, uint8_t q_id, uint8_t dest)
 
 		// recherche s'il y a un autre message pour le meme dest
 		uint8_t der = mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
-		//LOG_INFO("cherche der: node_id:%i der:%i pos:%i", node_id, der, pos);
+		if (der>=2)
+			LOG_INFO("cherche der: node_id:%i der:%i pos:%i", node_id, der, pos);
 		if (der) mess->param = mess->param | 1;  // dernier
 
 		//osMutexRelease(lora_bufferMutex);
@@ -1469,9 +1581,14 @@ uint8_t mess_LORA_dequeue_fictif(uint8_t q_id, uint8_t dest)
 	}
 
 	uint16_t pos;
-	return mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
+	uint8_t ret = mess_lora_cherche(node_id, 0, &pos); // 0:ok 1-4:non
+	if (ret>=2)
+		LOG_INFO("Cherche = corruption1:%i", ret);
+	return ret;
+
 }
 
+// jamais appelé
 // return : 0:trouvé, 1:vide, 2-3-4:erreur
 uint8_t mess_lora_dequeue_premier(out_message_t* mess, uint8_t q_id )
 {
@@ -1519,6 +1636,7 @@ uint8_t mess_lora_dequeue_premier(out_message_t* mess, uint8_t q_id )
 	return 0; //ok
 }
 
+// jamais appelé
 // return : 0:trouvé, 1:vide, 2-3-4:erreur
 uint8_t mess_lora_dequeue_premier_fictif(uint8_t q_id )
 {
@@ -2198,4 +2316,13 @@ void lora_get_time_since_last_and_to_next(uint32_t* elapsed_ms_since_last,
     uint32_t last_beacon_ms = (g_next_beacon_at_ms >= 180000U) ? (g_next_beacon_at_ms - 180000U) : 0U;
     *elapsed_ms_since_last = (now_ms >= last_beacon_ms) ? (now_ms - last_beacon_ms) : 0U;
     *remaining_ms_to_next = (g_next_beacon_at_ms > now_ms) ? (g_next_beacon_at_ms - now_ms) : 0U;
+}
+
+// nota : ne gère pas les erreurs
+uint8_t Class(uint8_t g_tx_dest)
+{
+	uint8_t node_id = Node_id(g_tx_dest);
+	if (node_id)
+		return nodes[node_id-1].class;
+	else return 0;
 }

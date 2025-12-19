@@ -51,6 +51,7 @@ typedef enum {
 // Machine d’états non bloquante pour la phase RX
 typedef enum {
     RX_IDLE = 0,
+	RX_BALISE,
 	RX_ATTENTE,
     RX_MESS_RECU,
     RX_WAIT_ACK_SENT
@@ -157,6 +158,7 @@ uint8_t mess_LORA_suppression_milieu(uint8_t q_id, uint16_t pos);
 uint8_t mess_lora_cherche_size(uint8_t node_id, uint8_t cpt, uint16_t* pos, uint16_t* size_tot);
 void info_Node(uint8_t id, uint8_t cpt);
 uint8_t mess_LORA_suppression(uint8_t node, uint8_t* nb_mess_supp);
+void lora_timer_tx(void);
 
 
 // Callbacks Radio → LoRa layer

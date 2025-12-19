@@ -114,6 +114,30 @@ UTIL_TIMER_Status_t TIMER_IF_StartTimer(uint32_t timeout)
   UTIL_TIMER_Status_t ret = UTIL_TIMER_OK;
   /* USER CODE BEGIN TIMER_IF_StartTimer */
 
+  // timeout en ticks (doit être converti depuis ms)
+    // LPTIM3 est configuré avec LSE/16 = 2048 Hz
+    // 1 tick = 1/2048 s ≈ 0.488 ms
+
+    uint32_t minTimeout = TIMER_IF_GetMinimumTimeout();
+    if (timeout == 0) {
+  	  timeout = minTimeout;
+    }
+    if (timeout < minTimeout) {
+        timeout = minTimeout;
+      }
+    // Convertir timeout (en ticks) en valeur de comparaison
+    uint32_t current = HAL_LPTIM_ReadCounter(&hlptim3);
+    uint32_t compare = (current + timeout) & 0xFFFF;  // 16 bits
+
+    __HAL_LPTIM_COMPARE_SET(&hlptim3, compare);
+    __HAL_LPTIM_CLEAR_FLAG(&hlptim3, LPTIM_FLAG_CMPM);
+    __HAL_LPTIM_ENABLE_IT(&hlptim3, LPTIM_IT_CMPM);
+
+    // Démarrer LPTIM3 en mode counter
+    HAL_LPTIM_Counter_Start_IT(&hlptim3, 0xFFFF);
+
+    ret = UTIL_TIMER_OK;
+
   /* USER CODE END TIMER_IF_StartTimer */
   return ret;
 }
@@ -122,6 +146,10 @@ UTIL_TIMER_Status_t TIMER_IF_StopTimer(void)
 {
   UTIL_TIMER_Status_t ret = UTIL_TIMER_OK;
   /* USER CODE BEGIN TIMER_IF_StopTimer */
+
+  __HAL_LPTIM_DISABLE_IT(&hlptim3, LPTIM_IT_CMPM);
+  HAL_LPTIM_Counter_Stop_IT(&hlptim3);
+  ret = UTIL_TIMER_OK;
 
   /* USER CODE END TIMER_IF_StopTimer */
   return ret;

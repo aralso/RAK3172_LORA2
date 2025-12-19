@@ -99,6 +99,12 @@ void configure_uart_wakeup(void)
 
 }
 
+void toggle_led(void)  // Sorties : A6, A7, A13
+{
+	HAL_GPIO_TogglePin(LED1_Port, LED1_Pin); // Toggle LED PA13
+
+}
+
 // Avant KernerInitialize
 void init_functions1(void)
 {
@@ -119,7 +125,7 @@ void init_functions2(void)
 		);
 	    if (HTimer_Watchdog != NULL) xTimerStart(HTimer_Watchdog, 0);
 
-	/*	HTimer_24h = xTimerCreate(
+		HTimer_24h = xTimerCreate(
 	        "Timer24h",                          // Nom
 	        24*3600*1000,     // Période en ticks
 	        pdTRUE,                             // Auto-reload
@@ -146,7 +152,6 @@ void init_functions2(void)
 				NULL, Timertemp_periodCallback );
 		#endif
 
-	   	    UART_SEND("Timer4\n\r");*/
 
 		#if (CODE_TYPE == 'C')  // garches chaudiere moteur
 			// timer 1min pour calcul PID et pilotage vanne 3 voies
@@ -197,6 +202,11 @@ void init_functions4(void)
 // Dans PreSleepProcessing
 void PreSleepProcessing(uint32_t *ulExpectedIdleTime)
 {
+
+#ifdef NO_SLEEP
+    *ulExpectedIdleTime = 0;   // empêche tickless
+    return;
+#endif
 
 /*#ifdef mode_sleep
 	if (*ulExpectedIdleTime >= 100)
@@ -293,7 +303,6 @@ void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim)
 	  uint16_t len = strlen(init_msg);
 	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);*/
 
-	static uint32_t counter = 0;
 
 	if (Event_QueueHandle == NULL)  return; // Queue pas encore créée
 
@@ -383,30 +392,11 @@ void HAL_LPTIM_CompareMatchCallback(LPTIM_HandleTypeDef *hlptim)
 {
     if (Event_QueueHandle == NULL)  return;
 
+    if (hlptim->Instance == LPTIM1)  // Sortie du mode STOP2 par Timer
+    {
+    }
     if (hlptim->Instance == LPTIM2)
     {
-    		//UART_SEND("Reveil 4\n\r");
-
-		//event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
-		//xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-    	/*if (g_rx_state == RX_ATTENTE)  // message RX non recu
-    	{
-    		g_rx_state = RX_IDLE;
-    	}
-    	if (g_tx_state == RX_RESPONSES)
-    	{
-    		g_tx_state = TX_IDLE;   // pret à renvoyer des messages
-    		if (mess_LORA_dequeue_fictif(g_tx_class, g_tx_dest)==0)
-    		{
-    			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
-    			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-    		}
-    	}
-    	else
-    	{
-			event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
-			xQueueSendFromISR(Event_QueueHandle, &evt, 0);
-    	}*/
 		//__HAL_LPTIM_DISABLE_IT(&hlptim2, LPTIM_IT_CMPM);
 		//__HAL_LPTIM_CLEAR_FLAG(&hlptim2, LPTIM_FLAG_CMPM);
     }
@@ -469,11 +459,11 @@ static void Timer24hCallback(TimerHandle_t xTimer)
 
 static void Timer20minCallback(TimerHandle_t xTimer)
 {
-	  char init_msg[] = "Tim10s\n\r";
-	  uint16_t len = strlen(init_msg);
-	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
+	  //char init_msg[] = "Tim10s\n\r";
+	  //uint16_t len = strlen(init_msg);
+	  //HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
 
-    LOG_INFO("Timer 10s:calback");
+    LOG_INFO("Timer 50s:calback");
 	event_t evt = { EVENT_TIMER_20min, 0, 0 };
 	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{

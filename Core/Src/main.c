@@ -96,7 +96,7 @@ void StartDefaultTask(void *argument);
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
-static void MX_GPIO_Init_modif(void);
+//static void MX_GPIO_Init_modif(void);
 
 /* USER CODE END PFP */
 
@@ -141,18 +141,25 @@ int main(void)
   MX_GPIO_Init();
   MX_IWDG_Init();
   MX_RTC_Init();
-  MX_LPUART1_UART_Init();
   MX_LPTIM1_Init();
-  MX_I2C2_Init();
   MX_LPTIM3_Init();
 
-
   /* Initialize interrupts */
-  MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-  #ifndef SANS_RADIO
+	#ifdef mode_LPUART1
+	  MX_LPUART1_UART_Init();
+	#endif
+
+	#ifdef mode_I2C
+	  MX_I2C2_Init();
+	#endif
+
+    MX_NVIC_Init();
+
+
+	#ifndef SANS_RADIO
 	  MX_SUBGHZ_Init();
-  #endif
+	#endif
 
   init1();  // IT UArt, démarre LPTIM1, message "RAK Init"
   /* USER CODE END 2 */
@@ -332,11 +339,11 @@ static void MX_ADC_Init(void)
   * @param None
   * @retval None
   */
+#ifdef mode_I2C
 static void MX_I2C2_Init(void)
 {
 
   /* USER CODE BEGIN I2C2_Init 0 */
-#if CODE_TYPE == 'B'
   /* USER CODE END I2C2_Init 0 */
 
   /* USER CODE BEGIN I2C2_Init 1 */
@@ -370,11 +377,11 @@ static void MX_I2C2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C2_Init 2 */
-#endif
 
   /* USER CODE END I2C2_Init 2 */
 
 }
+#endif
 
 /**
   * @brief IWDG Initialization Function
@@ -479,6 +486,7 @@ static void MX_LPTIM3_Init(void)
   * @param None
   * @retval None
   */
+#ifdef mode_LPUART1
 static void MX_LPUART1_UART_Init(void)
 {
 
@@ -519,7 +527,7 @@ static void MX_LPUART1_UART_Init(void)
   /* USER CODE BEGIN LPUART1_Init 2 */
   LPUART1_EXTI_ENABLE_IT();
 
-#ifdef mode_sleep
+//#ifdef mode_sleep
 		// Configuration du réveil UART pour le mode Stop
 	    // set the wake-up event:
 	    // specify wake-up on RXNE flag
@@ -536,11 +544,12 @@ static void MX_LPUART1_UART_Init(void)
 
 		// Activer le mode Stop pour l'UART
 		  HAL_UARTEx_EnableStopMode(&hlpuart1);    // enable MCU wake-up by LPUART
-#endif
+//#endif
 
   /* USER CODE END LPUART1_Init 2 */
 
 }
+#endif
 
 /**
   * @brief RTC Initialization Function
@@ -693,10 +702,19 @@ static void MX_GPIO_Init(void)
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
+  // si I2C non utilisé => PA11 et PA12 en analogique
+	#ifndef mode_I2C
+	  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
+	  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	  GPIO_InitStruct.Pull = GPIO_NOPULL;
+	  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	#endif
+
   // A14 : GPIO Output EXT14
 
   //Configure GPIO pins : PBPin PBPin PBPin
-  GPIO_InitStruct.Pin = LED1_Pin|LED2_Pin|LED3_Pin;
+/*  GPIO_InitStruct.Pin = LED1_Pin|LED2_Pin|LED3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -719,7 +737,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = BUT3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(BUT3_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(BUT3_GPIO_Port, &GPIO_InitStruct);*/
 
  /* // EXTI interrupt init
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
@@ -749,7 +767,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static void MX_GPIO_Init_modif(void)
+/*static void MX_GPIO_Init_modif(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
@@ -780,7 +798,7 @@ static void MX_GPIO_Init_modif(void)
     __HAL_RCC_GPIOA_CLK_DISABLE();
     __HAL_RCC_GPIOB_CLK_DISABLE();
     __HAL_RCC_GPIOC_CLK_DISABLE();
-}
+}*/
 
 void MX_ADC_Init_Public(void)
 {

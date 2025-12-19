@@ -15,18 +15,18 @@
 #ifdef MODE_DEBUG
 	#define SANS_RADIO
 	#define Sans_Watchdog
-	#define SANS_I2C
 #endif
 
 
-#define LED_Pin GPIO_PIN_11   // LED : A11
-#define LED_GPIO_Port GPIOA
-#define bouton_Pin GPIO_PIN_12 // bouton : A12
+#define LED1_Pin GPIO_PIN_13   // LED : PA13
+#define LED1_Port GPIOA
+#define bouton_Pin GPIO_PIN_14 // bouton : PA14
 #define bouton_GPIO_Port GPIOA
 #define ID_CONCENTRATOR	'H'
 
 #define CODE_VERSION  "1.11"
 
+#define NO_SLEEP
 
 #define END_NODE   // sinon  Define CONCENTRATOR
 
@@ -37,10 +37,13 @@
 	#if CODE_TYPE == 'A'
 		#define My_Address 'U'
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
+		#define mode_LPUART1
 		#define mode_sleep
 		#define KeepAlive 1   // Nb de jours entre chaque keepalive
-	#elif CODE_TYPE == 'B' // Garches chaudiere Thermometre
+	#elif CODE_TYPE == 'B' // Garches chaudiere Thermometre  8uA=>14 ans(CR2477)
 		#define My_Address 'I'
+		#define mode_I2C
+		#define mode_LPUART1
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 		#define TEMP_PERIOD	30  // 30 secondes
 		#define mode_sleep
@@ -48,12 +51,14 @@
 
 	#elif CODE_TYPE == 'C' // Garches chaudiere Moteur
 		#define My_Address 'J'
+		#define mode_LPUART1
 		#define CLASS LORA_CLASS_C  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
 		#define KeepAlive 1
 	#endif
 #else
 	#define My_Address ID_CONCENTRATOR
 	#define CLASS LORA_CLASS_C
+	#define mode_LPUART1
 #endif
 
 #ifndef KeepAlive

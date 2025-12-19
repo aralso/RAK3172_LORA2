@@ -275,29 +275,30 @@ uint8_t HDC1080_read_tempe_humid1(uint16_t* temperature, uint8_t* humidity)
 uint8_t HDC1080_read_tempe_humid(uint16_t* temperature, uint8_t* humidity)
 {
     uint8_t ret = 1;
-    uint8_t data_buffer[4];  // Buffer pour la température et l'humidité
+	#ifdef mode_I2C
+		uint8_t data_buffer[4];  // Buffer pour la température et l'humidité
 
-    *temperature = 0;
-    *humidity = 0;
+		*temperature = 0;
+		*humidity = 0;
 
-    // 1. Demande de conversion de température (Registre 0x00)
-    ret = HAL_I2C_Master_Transmit(&hi2c2, HDC1080_I2C_Address, HDC1080_Temperature_REG, 1, 1000);
-    if (ret != HAL_OK)  return 2;  // Si une erreur survient dans la transmission pour la température
+		// 1. Demande de conversion de température (Registre 0x00)
+		ret = HAL_I2C_Master_Transmit(&hi2c2, HDC1080_I2C_Address, HDC1080_Temperature_REG, 1, 1000);
+		if (ret != HAL_OK)  return 2;  // Si une erreur survient dans la transmission pour la température
 
-    osDelay(HDC1080_conversion_delay*2);
-    //HAL_Delay(HDC1080_conversion_delay*2);  // Attente de 20 ms pour la conversion de température
+		osDelay(HDC1080_conversion_delay*2);
+		//HAL_Delay(HDC1080_conversion_delay*2);  // Attente de 20 ms pour la conversion de température
 
-    // 3. Lire la température et humidite (Registre 0x00)
-	ret = HAL_I2C_Master_Receive(&hi2c2, HDC1080_I2C_Address, data_buffer, 4, 1000);
-    if (ret != HAL_OK)  return 3;  // Si une erreur survient dans la lecture de la température
+		// 3. Lire la température et humidite (Registre 0x00)
+		ret = HAL_I2C_Master_Receive(&hi2c2, HDC1080_I2C_Address, data_buffer, 4, 1000);
+		if (ret != HAL_OK)  return 3;  // Si une erreur survient dans la lecture de la température
 
-    // Conversion des données de température en °C
-    uint16_t temp16 = ((uint16_t)data_buffer[0] << 8) | data_buffer[1];
-    float temp_f = (((float)temp16) * T_Coff) - 40.0;  // Application de la conversion en float : en degré
-    *temperature = (uint16_t)((temp_f + 100.0) * 100);  // Conversion en centi-degrés -10°:9000 0°:10000 25°:12500
-    uint16_t humid = ((uint16_t)data_buffer[2] << 8) | data_buffer[3];
-    float humid_f = ((float)humid)*RH_Coff;
-    *humidity = (uint16_t)(humid_f);  // Humidité déjà en pourcentage
-
+		// Conversion des données de température en °C
+		uint16_t temp16 = ((uint16_t)data_buffer[0] << 8) | data_buffer[1];
+		float temp_f = (((float)temp16) * T_Coff) - 40.0;  // Application de la conversion en float : en degré
+		*temperature = (uint16_t)((temp_f + 100.0) * 100);  // Conversion en centi-degrés -10°:9000 0°:10000 25°:12500
+		uint16_t humid = ((uint16_t)data_buffer[2] << 8) | data_buffer[3];
+		float humid_f = ((float)humid)*RH_Coff;
+		*humidity = (uint16_t)(humid_f);  // Humidité déjà en pourcentage
+	#endif
     return ret;  // Lecture réussie
 }

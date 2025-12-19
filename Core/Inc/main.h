@@ -35,7 +35,7 @@ extern "C" {
 #define RTC_N_PREDIV_S 10
 #define RTC_PREDIV_S ((1<<RTC_N_PREDIV_S)-1)
 #define RTC_PREDIV_A ((1<<(15-RTC_N_PREDIV_S))-1)
-#define LED1_Pin GPIO_PIN_6  //GPIO_PIN_15
+/*#define LED1_Pin GPIO_PIN_6  //GPIO_PIN_15
 #define LED1_GPIO_Port GPIOA  //GPIOB
 #define LED2_Pin GPIO_PIN_7  //GPIO_PIN_9
 #define LED2_GPIO_Port GPIOA  // GPIOB
@@ -57,7 +57,7 @@ extern "C" {
 #define USARTx_RX_Pin GPIO_PIN_3
 #define USARTx_RX_GPIO_Port GPIOA
 #define USARTx_TX_Pin GPIO_PIN_2
-#define USARTx_TX_GPIO_Port GPIOA
+#define USARTx_TX_GPIO_Port GPIOA*/
 
 /* USER CODE END Includes */
 

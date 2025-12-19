@@ -32,6 +32,9 @@
 
 void SystemClock_Config(void);
 
+uint32_t nb_entrees_mode_stop;
+uint32_t nb_entrees_mode_sleep;
+
 extern LPTIM_HandleTypeDef hlptim1;
 
 /* Fréquence LSE = 32768 Hz */
@@ -92,6 +95,7 @@ void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 {
 	if(xExpectedIdleTime < MIN_TICKS_FOR_STOP)
 	{
+		nb_entrees_mode_sleep++;
 		// sleep léger
 		configPRE_SLEEP_PROCESSING(&xExpectedIdleTime);
 		if(xExpectedIdleTime > 0) __asm volatile("wfi");
@@ -105,6 +109,8 @@ void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 
 void EnterStopWithLPTIM(TickType_t  xExpectedIdleTime)
 {
+	nb_entrees_mode_stop++;
+
     uint32_t reloadValue;
     TickType_t completeTickPeriods;
 

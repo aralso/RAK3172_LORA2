@@ -23,6 +23,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "string.h"
+void toggle_led(void);
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -304,7 +306,7 @@ void RTC_Alarm_IRQHandler(void)
 void SUBGHZ_Radio_IRQHandler(void)
 {
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 0 */
-
+	toggle_led();
   /* USER CODE END SUBGHZ_Radio_IRQn 0 */
   HAL_SUBGHZ_IRQHandler(&hsubghz);
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 1 */

@@ -27,17 +27,20 @@ LPTIM2 : timer freertos en mode stop
 LPTIM3 : timers expirés de la radio
 Alarm_RTC : interrupt toutes les 24 heures
 
-Conso en mode veille :
-Sleep 1,4mA  Stop:0,4uA(réveil uart/RTC)  Standby 0,1uA(pas de réveil uart)
 
-Conso en mode Stop2 : 2,7uA
-	Coeur Stop 2 (cpu+ram) : 0,7 uA  (en STOP1:+3uA)
-	LSE 32kHz              : 0,3uA
-	RTC (avec LSE)		   : 0,2uA
-	IWDG (LSI)			   : 0,5uA
+Conso en mode Stop2 (sans uart) : 2uA
+	Coeur Stop 2 (cpu+ram) : 0,4 uA  (en STOP1:+3uA)
+	LSE 32kHz              : 0,6uA
+	RTC (avec LSE)		   : 0,25uA
+	IWDG (LSI)			   : 0,4uA
+	LPTIM1   			   : 0,3uA
+	LPTIM3				   : 0,15
+	Radio en sleep		   : 0,05uA
+
+Autres :
 	LPUART1				   : 0,7uA (avec RX pullup : +2,5uA)
-	LPTIM2				   : 0,2uA
-	Radio en sleep		   : 0,1uA
+	reveil watchdog 20s    : 0,25uA (1ms à 5mA chaque 20s)
+	Envoi temp 20min       : 6uA (0,5s à 15mA chaque 20 min)
 
 Conso en MSI_range8 et HSI : 1,33mA
 */
@@ -160,7 +163,9 @@ void init1()  // avant KernelInitialize
 	  init_msg[1] = My_Address;
 	  init_msg[27] = get_log_level()+'0';
 	  uint16_t len = strlen(init_msg);
-	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
+	  #ifdef mode_LPUART1
+		  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
+	  #endif
 	  HAL_Delay(500);
 
       init_functions1();
@@ -948,6 +953,8 @@ void Appli_Tsk(void *argument)
     //LOG_INFO("Appli_Task started with watchdog protection");
 	//uint16_t event_count;
 
+	osDelay(2000);
+	LOG_INFO("debut1");
 
 	for(;;)
     {
@@ -977,7 +984,7 @@ void Appli_Tsk(void *argument)
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
 					// Actions pour bouton pressé
-					//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1); // Toggle LED
+					//HAL_GPIO_TogglePin(LED1_GPIO, LED1_Pin); // Toggle LED PA13
 
 					// Envoyer message LoRa
 					//char messa[] = "Button pressed!";
@@ -997,10 +1004,21 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 				case EVENT_LORA_TX_STEP: {
-					LOG_INFO("TX_step reveil ");
-					//lora_tx_state_step();
+					LOG_INFO("TX_step ");
+					lora_tx_state_step();
 					break;
 				}
+				case EVENT_TIMER_LORA_TX: {   // fin du timer tx_rx
+					LOG_INFO("Timer lora tx");
+					lora_timer_tx();
+					break;
+				}
+
+				case EVENT_LORA_IDLE: {  // Remise Radio en Sleep ou RX (apres délai RX)
+		        	relance_radio_rx(0);  // RX ou sleep
+					break;
+				}
+
 				case EVENT_LORA_RX: {
 					LOG_INFO("message LORA recu len:%i rssi:%i snr:%i param:%02X mess:%s", evt.data, message_recu.rssi, \
 							message_recu.snr, message_recu.param, message_recu.data);
@@ -1016,8 +1034,6 @@ void Appli_Tsk(void *argument)
 					}
 					break;
 				}
-
-
 
 				case EVENT_LORA_ACK_TIMEOUT: {
 					// Timeout ACK → retry ou passage à l’état suivant
@@ -1099,7 +1115,7 @@ void Appli_Tsk(void *argument)
 						HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
 						watchdog_check_all_tasks(); // test watdchdog logiciel
 					#endif
-					LOG_INFO("Refresh watchdog");
+					//LOG_INFO("Refresh watchdog");
 				    break;
 				}
 				case EVENT_AlarmA: {

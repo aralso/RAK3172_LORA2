@@ -32,6 +32,7 @@ typedef enum  {
     EVENT_BUTTON = 0,
     EVENT_LORA_TX,
 	EVENT_LORA_TX_DONE,
+	EVENT_TIMER_LORA_TX,
 	EVENT_LORA_RX,
 	EVENT_LORA_REVEIL_BALISE,
     EVENT_UART_RX,
@@ -48,6 +49,7 @@ typedef enum  {
 	EVENT_UART_RAZ,
     EVENT_CAD_DONE,
     EVENT_LORA_TX_STEP,
+	EVENT_LORA_IDLE,
     EVENT_LORA_ACK_TIMEOUT,
 	EVENT_AlarmA,
 	#if CODE_TYPE == 'C'
@@ -142,7 +144,6 @@ extern TimerHandle_t HTimer_temp_period;
 void lptim_program_compare_advance_ms(uint32_t advance_ms);
 uint32_t lptim_get_seconds(void);
 extern volatile uint32_t lptim_epoch_s;
-void lptim2_schedule_ms(uint32_t delay_ms);
 extern uint8_t test_index;
 extern uint8_t test_var;
 extern uint32_t test_tab[test_MAX];

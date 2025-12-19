@@ -42,14 +42,27 @@ uint32_t ReadVBAT(void);
 
 	Statut
 	Radio :  SLRE : Etat radio (1:Stby_RC, 2:stdby_Xosc, 3:FS, 4:RX, 5:RX_cont, 6:RX_duty, 7:TX, sinon sleep)
+	SLNL : liste nodes et nb recus/emis, queues
+	SLRT : Etat transmission radio
+	SLRR : Etat reception radio
+	(SLRN : Etat nodes)
 	Batterie : SLBa : batt avant et apres
+	SLTa : Stack des taches
+	SLWa : Watchdog des taches
 
 	Test de RSSI : sur Node: faire HSLO (-> RSLI -> RSSI)
 	    sur Node : 1SLRX1x : puissance TX:x
 
+	Radio :
+	RLSI : niveau rssi recu du node 0
+	RESl : passage raido en sleep
+	RERXxy Ecriture param Radio TX paramx = y
+
 	Valeurs Lect/Ecrit
 	VEPa : Param_def
 	VERe : Reset
+	VLSt VLSl : compteur sleep et stop
+	VLN
 */
 
 uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
@@ -81,8 +94,10 @@ static out_message_t form_buf; // Buffer pour le formatage de message ASCII
 static SemaphoreHandle_t log_mutex = NULL;
 
 extern SUBGHZ_HandleTypeDef hsubghz;
-
 extern UART_HandleTypeDef hlpuart1;
+
+extern uint32_t nb_entrees_mode_stop;
+extern uint32_t nb_entrees_mode_sleep;
 
 static uint8_t rx_char;
 static uint8_t expected_length = 0;
@@ -151,6 +166,10 @@ uint8_t mess_dequeue(out_message_t* mess);
 	    LOG_ERROR("Event uart timeout - message lost");
 	}
 }*/
+void envoi_uart_test(void)
+{
+	UART_SEND("Send1\n\r");
+}
 
 // verification si des caractères uart_rx sont dans le buffer
 void verif_timout_uart_rx(void)
@@ -842,12 +861,32 @@ void Uart_TX_Tsk(void *argument)
 
 			if (stat == 0) {
 				// ⭐ MESSAGE DISPONIBLE - Envoyer
-				HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, mess.data, mess.length, 10000);
-				if (status != HAL_OK) {
-					code_erreur = code_erreur_envoi;
-					err_donnee1 = status;
-					err_donnee2 = mess.length;
+				for (int i = 0; i < 30; i++)  // securite si uart deja utilise ailleurs
+				{
+				    //vTaskDelay(5);
+					HAL_UART_StateTypeDef st = HAL_UART_GetState(&hlpuart1);
+				    if ((st == HAL_UART_STATE_READY) || (st == HAL_UART_STATE_BUSY_RX))
+				    {
+						HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, mess.data, mess.length, 10000);
+						if (status != HAL_OK) {
+							code_erreur = code_erreur_envoi;
+							err_donnee1 = status;
+							err_donnee2 = mess.length;
+						}
+				        break;
+				    }
+				    /*else
+				    {
+						char init_msg1[] = " Uxx\n\r";
+						init_msg1[1] = (st >> 4) +'0';
+						init_msg1[2] = (st & 0x0F) +'0';
+						uint16_t len1 = strlen(init_msg1);
+						HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
+
+				    }*/
+				    vTaskDelay(5);
 				}
+
 			} else if (stat == 1) {
 				// ⭐ PAS DE MESSAGE (NORMAL) - Sortir de la boucle
 				break;
@@ -1493,6 +1532,10 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("Radio Sleep");
 				  Radio.Sleep();
 			  }
+              if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // RERXxy Radio TX paramx = y
+              {
+            	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+              }
           }
 
           // ******************************** SSSSSSSSSSSSSSSSSS  ********************
@@ -1544,11 +1587,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             	  RadioPhyStatus_t st = SUBGRF_GetStatus();
             	  //st.Fields.ChipMode
             	  //uint8_t mode = (status >> 4) & 0x07;
-          		  LOG_INFO("Radio : Etat:%i", st.Fields.ChipMode); //hsubghz.State, hsubghz.DeepSleep);
-              }
-              if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // SLRXxy Radio TX paramx = y
-              {
-            	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+          		  LOG_INFO("Radio : Etat:%i etat_rx:%i etat_tx:%i", st.Fields.ChipMode, g_rx_state, g_tx_state); //hsubghz.State, hsubghz.DeepSleep);
               }
               if ( (message_in[4] =='R') && (message_in[5] =='L') && (longueur_m==6))  // SLRL  Radio Lecture etat
               {
@@ -1709,6 +1748,15 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  {
 				  envoie_mess_ASC(param_def, "%cParam : %02X", message_in[1], param_def);
 			  }
+			  if ( (message_in[4] =='S')  && (message_in[5] =='l') && (longueur_m==6))  // VLSl : compteur nb sleep
+			  {
+				  envoie_mess_ASC(param_def, "%cNb sleep : %i", message_in[1], nb_entrees_mode_sleep);
+			  }
+			  if ( (message_in[4] =='S')  && (message_in[5] =='t') && (longueur_m==6))  // VLSt : compteur nb Stop
+			  {
+				  envoie_mess_ASC(param_def, "%cNb Stop2 : %i", message_in[1], nb_entrees_mode_stop);
+			  }
+
           }
           if ((message_in[2] == 'V') && (message_in[3] == 'E'))  //  VE Ecriture Valeur
           {
