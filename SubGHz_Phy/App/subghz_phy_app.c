@@ -99,30 +99,7 @@ static void OnCadDone(bool channelActivityDetected);
 void SubghzApp_Init(void)
 {
   /* USER CODE BEGIN SubghzApp_Init_1 */
-
-	// Activ pin output : A8 et A11
-	GPIO_InitTypeDef gpio_init_structure = {0};
-
-	/* Enable the GPIO Clocks */
-	__HAL_RCC_GPIOA_CLK_ENABLE();
-	__HAL_RCC_GPIOB_CLK_ENABLE();
-
-	/* Configure the GPIO pins */
-	gpio_init_structure.Pin = GPIO_PIN_8;
-	gpio_init_structure.Mode = GPIO_MODE_OUTPUT_PP;
-	gpio_init_structure.Pull = GPIO_NOPULL;
-	gpio_init_structure.Speed = GPIO_SPEED_FREQ_HIGH;
-
-	HAL_GPIO_Init(GPIOA, &gpio_init_structure);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
-
-	/*gpio_init_structure.Pin = GPIO_PIN_11;
-
-	HAL_GPIO_Init(GPIOA, &gpio_init_structure);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);*/
-
-
-	RadioEvents.CadDone = OnCadDone;
+  RadioEvents.CadDone = OnCadDone;
   /* USER CODE END SubghzApp_Init_1 */
 
   /* Radio initialization */

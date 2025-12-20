@@ -333,6 +333,7 @@ static void MX_ADC_Init(void)
 
 
   /* USER CODE END ADC_Init 2 */
+
 }
 
 /**
@@ -634,7 +635,7 @@ void MX_RTC_Init(void)
 
   /** Enable the Alarm B
   */
-  sAlarm.AlarmTime.Hours = 0x19;
+  sAlarm.AlarmTime.Hours = 0x20;
   sAlarm.Alarm = RTC_ALARM_B;
   if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {

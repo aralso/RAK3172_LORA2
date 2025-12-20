@@ -232,7 +232,7 @@ UTIL_TIMER_Status_t TIMER_IF_StartTimer(uint32_t timeout)
   TIMER_IF_DBG_PRINTF("Start timer: time=%d, alarm=%d\n\r",  GetTimerTicks(), timeout);
   /* starts timer*/
   sAlarm.BinaryAutoClr = RTC_ALARMSUBSECONDBIN_AUTOCLR_NO;
-  sAlarm.AlarmTime.SubSeconds = UINT32_MAX - timeout;
+  sAlarm.AlarmTime.SubSeconds = timeout;
   sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
   sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDBINMASK_NONE;
   sAlarm.Alarm = RTC_ALARM_A;
@@ -508,12 +508,7 @@ static inline uint32_t GetTimerTicks(void)
 
   /* USER CODE END GetTimerTicks */
   uint32_t ssr = LL_RTC_TIME_GetSubSecond(RTC);
-  /* read twice to make sure value it valid*/
-  while (ssr != LL_RTC_TIME_GetSubSecond(RTC))
-  {
-    ssr = LL_RTC_TIME_GetSubSecond(RTC);
-  }
-  return UINT32_MAX - ssr;
+  return ssr;
   /* USER CODE BEGIN GetTimerTicks_Last */
 
   /* USER CODE END GetTimerTicks_Last */

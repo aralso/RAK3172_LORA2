@@ -73,10 +73,22 @@ int32_t RBI_Init(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_Init();
 #else
-  /* 2/ Or implement RBI_Init here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_Init_2 */
-#warning user to provide its board code or to call his board driver functions
+  GPIO_InitTypeDef  gpio_init_structure = {0};
+
+  /* Enable GPIOA clock */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  /* Configure PA8 */
+  gpio_init_structure.Pin = GPIO_PIN_8;
+  gpio_init_structure.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio_init_structure.Pull = GPIO_NOPULL;
+  gpio_init_structure.Speed = GPIO_SPEED_FREQ_HIGH;
+
+  HAL_GPIO_Init(GPIOA, &gpio_init_structure);
+
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
   /* USER CODE END RBI_Init_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER  */
@@ -99,10 +111,9 @@ int32_t RBI_DeInit(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_DeInit();
 #else
-  /* 2/ Or implement RBI_DeInit here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_DeInit_2 */
-#warning user to provide its board code or to call his board driver functions
+  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_8);
   /* USER CODE END RBI_DeInit_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER */
@@ -126,10 +137,25 @@ int32_t RBI_ConfigRFSwitch(RBI_Switch_TypeDef Config)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_ConfigRFSwitch((BSP_RADIO_Switch_TypeDef) Config);
 #else
-  /* 2/ Or implement RBI_ConfigRFSwitch here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_ConfigRFSwitch_2 */
-#warning user to provide its board code or to call his board driver functions
+  switch (Config)
+  {
+    case RBI_SWITCH_OFF:
+    case RBI_SWITCH_RX:
+    {
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+      break;
+    }
+    case RBI_SWITCH_RFO_LP:
+    case RBI_SWITCH_RFO_HP:
+    {
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+      break;
+    }
+    default:
+      break;
+  }
   /* USER CODE END RBI_ConfigRFSwitch_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER */
@@ -152,10 +178,9 @@ int32_t RBI_GetTxConfig(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_GetTxConfig();
 #else
-  /* 2/ Or implement RBI_GetTxConfig here */
   int32_t retcode = RBI_CONF_RFO;
   /* USER CODE BEGIN RBI_GetTxConfig_2 */
-#warning user to provide its board code or to call his board driver functions
+  /* RAK3172 can use RFO_LP or RFO_HP but let's default to RFO LP for now if unknown */
   /* USER CODE END RBI_GetTxConfig_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER */
@@ -178,10 +203,9 @@ int32_t RBI_IsTCXO(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_IsTCXO();
 #else
-  /* 2/ Or implement RBI_IsTCXO here */
-  int32_t retcode = IS_TCXO_SUPPORTED;
+  int32_t retcode = 1; // TCXO is supported on RAK3172
   /* USER CODE BEGIN RBI_IsTCXO_2 */
-#warning user to provide its board code or to call his board driver functions
+
   /* USER CODE END RBI_IsTCXO_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER  */
@@ -204,10 +228,9 @@ int32_t RBI_IsDCDC(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_IsDCDC();
 #else
-  /* 2/ Or implement RBI_IsDCDC here */
-  int32_t retcode = IS_DCDC_SUPPORTED;
+  int32_t retcode = 1; // DCDC is supported on RAK3172
   /* USER CODE BEGIN RBI_IsDCDC_2 */
-#warning user to provide its board code or to call his board driver functions
+
   /* USER CODE END RBI_IsDCDC_2 */
   return retcode;
 #endif  /* USE_BSP_DRIVER  */
@@ -230,10 +253,8 @@ int32_t RBI_GetRFOMaxPowerConfig(RBI_RFOMaxPowerConfig_TypeDef Config)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_GetRFOMaxPowerConfig((BSP_RADIO_RFOMaxPowerConfig_TypeDef) Config);
 #else
-  /* 2/ Or implement RBI_RBI_GetRFOMaxPowerConfig here */
   int32_t ret = 0;
   /* USER CODE BEGIN RBI_GetRFOMaxPowerConfig_2 */
-#warning user to provide its board code or to call his board driver functions
   if (Config == RBI_RFO_LP_MAXPOWER)
   {
     ret = 15; /*dBm*/
