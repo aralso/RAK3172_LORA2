@@ -29,6 +29,9 @@
 #include "stm32wlxx_hal.h"
 void MX_RTC_Init(void);
 #define h hrtc
+#include "fonctions.h"
+void toggle_led(void);
+
 
 /* USER CODE END Includes */
 
@@ -229,14 +232,21 @@ UTIL_TIMER_Status_t TIMER_IF_StartTimer(uint32_t timeout)
   TIMER_IF_StopTimer();
   timeout += RtcTimerContext;
 
-  TIMER_IF_DBG_PRINTF("Start timer: time=%d, alarm=%d\n\r",  GetTimerTicks(), timeout);
+  //LOG_INFO("Start timer: time=%d, alarm=%d\n\r",  GetTimerTicks(), timeout);
   /* starts timer*/
   sAlarm.BinaryAutoClr = RTC_ALARMSUBSECONDBIN_AUTOCLR_NO;
-  sAlarm.AlarmTime.SubSeconds = timeout;
-  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
-  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDBINMASK_NONE;
+  sAlarm.AlarmTime.SubSeconds = UINT32_MAX - timeout;
+  sAlarm.AlarmMask = RTC_ALARMMASK_ALL;
+  sAlarm.AlarmSubSecondMask = 0; // RTC_ALARMSUBSECONDBINMASK_NONE;
   sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm_IT(&h, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+
+  //LOG_INFO("RTC ICSR: 0x%08X\n\r", (uint32_t)RTC->ICSR);
+  /*if (READ_BIT(RTC->ICSR, RTC_ICSR_BIN) == 0)
+  {
+      LOG_INFO("WARNING: RTC not in BINARY mode!\n\r");
+  }*/
+
+  if (HAL_RTC_SetAlarm_IT(&h, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
   {
     Error_Handler();
   }
@@ -273,7 +283,7 @@ uint32_t TIMER_IF_SetTimerContext(void)
 
   /* USER CODE END TIMER_IF_SetTimerContext */
 
-  TIMER_IF_DBG_PRINTF("TIMER_IF_SetTimerContext=%d\n\r", RtcTimerContext);
+  //LOG_INFO("TIMER_IF_SetTimerContext=%d\n\r", RtcTimerContext);
   /*return time context*/
   return RtcTimerContext;
 }
@@ -378,7 +388,7 @@ void TIMER_IF_DelayMs(uint32_t delay)
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *h)
 {
   /* USER CODE BEGIN HAL_RTC_AlarmAEventCallback */
-
+  toggle_led(); // DEBUG: Toggle LED when Alarm A fires
   /* USER CODE END HAL_RTC_AlarmAEventCallback */
   UTIL_TIMER_IRQ_MAP_PROCESS();
   /* USER CODE BEGIN HAL_RTC_AlarmAEventCallback_Last */
@@ -502,13 +512,30 @@ static uint32_t TIMER_IF_BkUp_Read_MSBticks(void)
   /* USER CODE END TIMER_IF_BkUp_Read_MSBticks_Last */
 }
 
+void test_alarme()
+{
+	   // On va lire les registres de sous-secondes et binaire
+	    uint32_t alrmassr = RTC->ALRMASSR;
+	    uint32_t alrmabinr = *((uint32_t*)((uint32_t)RTC + 0x70)); // ALRMABINR est à l'offset 0x70
+	    uint32_t ssr_brut = RTC->SSR;
+
+	    LOG_INFO("ALRMASSR: 0x%08X, ALRMABINR: 0x%08X, SSR_BRUT: 0x%08X", alrmassr, alrmabinr, ssr_brut);
+	    LOG_INFO("RTC_SR: 0x%08X", (uint32_t)RTC->SR);
+	    LOG_INFO("RTC_CR: 0x%08X, ALRMAR: 0x%08X", (uint32_t)RTC->CR, (uint32_t)RTC->ALRMAR);
+}
+
+void get_tick_timer_rtc(void)
+{
+	LOG_INFO("Ticks:%i", GetTimerTicks());
+}
+
 static inline uint32_t GetTimerTicks(void)
 {
   /* USER CODE BEGIN GetTimerTicks */
 
   /* USER CODE END GetTimerTicks */
   uint32_t ssr = LL_RTC_TIME_GetSubSecond(RTC);
-  return ssr;
+  return UINT32_MAX - ssr;
   /* USER CODE BEGIN GetTimerTicks_Last */
 
   /* USER CODE END GetTimerTicks_Last */

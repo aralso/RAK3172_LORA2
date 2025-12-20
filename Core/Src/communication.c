@@ -22,6 +22,7 @@
 
 uint32_t ReadVBAT(void);
 
+
 #ifdef END_NODE
 	#define nb_ligne_routage 2  //  0->Loop  1->Uart   Add+1->Uart
 	uint8_t table_routage[nb_ligne_routage][6] = {
@@ -122,6 +123,7 @@ void Uart_RX_Tsk(void *argument);
 void Uart_TX_Tsk(void *argument);
 uint8_t Uart2_receive (uint8_t* data, uint8_t type);
 void debug_uart_interrupt_init();
+void get_tick_timer_rtc(void);
 
 /* Definitions for Uart2_RX_Task */
 osThreadId_t Uart_RX_TaskHandle;
@@ -1625,6 +1627,19 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("recep TL0");
                   envoie_mess_ASC(param_def, "%cOK", message_in[1]);
               }
+              if ((message_in[4] == '2') && (longueur_m==5))  // TL2 renvoie tick du timer RTC
+              {
+            	  	 get_tick_timer_rtc();
+              }
+		      if ( (message_in[4] =='1'))  // LEcture TL1
+		      {
+			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
+		      }
+		      if ( (message_in[4] =='L')  && (longueur_m==7))  // LEcture Log 1TLL01
+		      {
+			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
+			     LOG_INFO("Logs lus: %i", logs_read);
+		      }
               if ((message_in[4] == 'T') && (longueur_m==5))  // TLT => print test_tab
               {
             	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
@@ -1726,18 +1741,6 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("val:%i", test_var);
 			  }
 
-          }
-          if ((message_in[2] == 'T') && (message_in[3] == 'L'))  // Tests TL
-          {
-		      if ( (message_in[4] =='1'))  // LEcture TL1
-		      {
-			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
-		      }
-		      if ( (message_in[4] =='L')  && (longueur_m==7))  // LEcture Log 1TLL01
-		      {
-			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
-			     LOG_INFO("Logs lus: %i", logs_read);
-		      }
           }
 
           // ********************************   VVVVVVVVVVVVVVVVV  ********************

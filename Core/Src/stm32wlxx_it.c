@@ -292,7 +292,7 @@ void EXTI15_10_IRQHandler(void)
 void RTC_Alarm_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
-
+  toggle_led(); // DEBUG: Toggle LED on any RTC Alarm (A or B)
   /* USER CODE END RTC_Alarm_IRQn 0 */
   HAL_RTC_AlarmIRQHandler(&hrtc);
   /* USER CODE BEGIN RTC_Alarm_IRQn 1 */

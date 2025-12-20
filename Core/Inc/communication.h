@@ -75,9 +75,9 @@
 
 #define UART_SEND(msg) do { \
     HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
-    osDelay(100); \
 } while(0)
 
+//osDelay(100);
 
 #define NB_UART 1
 #define car_fin_trame 13

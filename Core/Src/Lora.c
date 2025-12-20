@@ -79,6 +79,7 @@ uint8_t analyse_queue_lora(uint8_t id);
 uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos );
 uint8_t Class(uint8_t g_tx_dest);
 void fin_phase_reception(void);
+void test_alarme();
 
 
 // Configuration réseau
@@ -727,6 +728,7 @@ void lora_tx_state_step(void)
             {
             	// fin phase transmission , début phase réception
         		fin_phase_transmission();
+        		test_alarme();
             }
             else  // encore des messages a envoyer
             {

@@ -40,6 +40,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32_timer.h"
+#include "fonctions.h"
 
 /** @addtogroup TIMER_SERVER
   * @{

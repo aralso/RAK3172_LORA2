@@ -636,6 +636,8 @@ void MX_RTC_Init(void)
   /** Enable the Alarm B
   */
   sAlarm.AlarmTime.Hours = 0x20;
+  sAlarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY;
+  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDBINMASK_ALL;
   sAlarm.Alarm = RTC_ALARM_B;
   if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {
