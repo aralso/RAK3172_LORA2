@@ -728,7 +728,6 @@ void lora_tx_state_step(void)
             {
             	// fin phase transmission , début phase réception
         		fin_phase_transmission();
-        		test_alarme();
             }
             else  // encore des messages a envoyer
             {

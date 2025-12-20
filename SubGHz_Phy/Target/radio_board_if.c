@@ -73,6 +73,7 @@ int32_t RBI_Init(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_Init();
 #else
+  /* 2/ Or implement RBI_Init here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_Init_2 */
   GPIO_InitTypeDef  gpio_init_structure = {0};
@@ -111,6 +112,7 @@ int32_t RBI_DeInit(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_DeInit();
 #else
+  /* 2/ Or implement RBI_DeInit here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_DeInit_2 */
   HAL_GPIO_DeInit(GPIOA, GPIO_PIN_8);
@@ -137,6 +139,7 @@ int32_t RBI_ConfigRFSwitch(RBI_Switch_TypeDef Config)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_ConfigRFSwitch((BSP_RADIO_Switch_TypeDef) Config);
 #else
+  /* 2/ Or implement RBI_ConfigRFSwitch here */
   int32_t retcode = 0;
   /* USER CODE BEGIN RBI_ConfigRFSwitch_2 */
   switch (Config)
@@ -178,6 +181,7 @@ int32_t RBI_GetTxConfig(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_GetTxConfig();
 #else
+  /* 2/ Or implement RBI_GetTxConfig here */
   int32_t retcode = RBI_CONF_RFO;
   /* USER CODE BEGIN RBI_GetTxConfig_2 */
   /* RAK3172 can use RFO_LP or RFO_HP but let's default to RFO LP for now if unknown */
@@ -203,7 +207,8 @@ int32_t RBI_IsTCXO(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_IsTCXO();
 #else
-  int32_t retcode = 1; // TCXO is supported on RAK3172
+  /* 2/ Or implement RBI_IsTCXO here */
+  int32_t retcode = IS_TCXO_SUPPORTED;
   /* USER CODE BEGIN RBI_IsTCXO_2 */
 
   /* USER CODE END RBI_IsTCXO_2 */
@@ -228,7 +233,8 @@ int32_t RBI_IsDCDC(void)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_IsDCDC();
 #else
-  int32_t retcode = 1; // DCDC is supported on RAK3172
+  /* 2/ Or implement RBI_IsDCDC here */
+  int32_t retcode = IS_DCDC_SUPPORTED;
   /* USER CODE BEGIN RBI_IsDCDC_2 */
 
   /* USER CODE END RBI_IsDCDC_2 */
@@ -253,6 +259,7 @@ int32_t RBI_GetRFOMaxPowerConfig(RBI_RFOMaxPowerConfig_TypeDef Config)
    *       on maximum output power that the board can deliver*/
   return BSP_RADIO_GetRFOMaxPowerConfig((BSP_RADIO_RFOMaxPowerConfig_TypeDef) Config);
 #else
+  /* 2/ Or implement RBI_RBI_GetRFOMaxPowerConfig here */
   int32_t ret = 0;
   /* USER CODE BEGIN RBI_GetRFOMaxPowerConfig_2 */
   if (Config == RBI_RFO_LP_MAXPOWER)
