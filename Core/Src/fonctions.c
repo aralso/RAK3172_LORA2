@@ -513,9 +513,9 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 #endif
 
 
-void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+void HAL_RTC_AlarmBEventCallback(RTC_HandleTypeDef *hrtc)
 {
-	event_t evt = { EVENT_AlarmA, 0, 1 };
+	event_t evt = { EVENT_AlarmB, 0, 1 };
 
 	if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
 	{

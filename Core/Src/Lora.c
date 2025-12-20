@@ -832,8 +832,8 @@ void fin_phase_transmission()
 	if (tx_rx_apres)
 	{
 		g_tx_state = RX_RESPONSES;
-        timer_lora_ms(RX_delai);
-		Radio.Rx(0);
+        //timer_lora_ms(RX_delai);
+		Radio.Rx(3000);
 	}
 	else // fin process TX_RX
 	{
@@ -1052,11 +1052,11 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
 					relance_radio_rx(1);
 				}
 
-				char init_msg1[] = " RXVIDE:x yz\n\r";
+				/*char init_msg1[] = " RXVIDE:x yz\n\r";
 				init_msg1[8] = ack+'0';
 				init_msg1[10] = (message_recu.param >> 4) +'0';
 				init_msg1[11] = (message_recu.param & 0x0F) +'0';
-				uint16_t len1 = strlen(init_msg1);
+				uint16_t len1 = strlen(init_msg1);*/
 				// ⭐ MESSAGE DISPONIBLE - Envoyer
 				/*for (int i = 0; i < 5; i++)  // securite si uart deja utilise ailleurs
 				{

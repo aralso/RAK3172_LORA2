@@ -1118,8 +1118,8 @@ void Appli_Tsk(void *argument)
 					//LOG_INFO("Refresh watchdog");
 				    break;
 				}
-				case EVENT_AlarmA: {
-					LOG_INFO("Alarme A : 19h");
+				case EVENT_AlarmB: {
+					LOG_INFO("Alarme B : 19h");
 					RAZ_nb_max_log_write();
 					mesure_batt_ok=0;  // permet de lire le niveau batterie apres transmission
 					batt_avant = GetBatteryLevel();
