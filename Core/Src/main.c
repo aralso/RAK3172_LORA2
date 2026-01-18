@@ -87,6 +87,9 @@ const osThreadAttr_t Appli_Task_attributes = {
   .stack_size = 600 * 4
 };
 
+/* USER CODE BEGIN Private function prototypes */
+static void MX_I2C2_Init(void) FUNUSED;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,7 +100,7 @@ void MX_RTC_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_LPTIM1_Init(void);
 static void MX_ADC_Init(void);
-static void MX_I2C2_Init(void);
+
 static void MX_LPTIM3_Init(void);
 void StartDefaultTask(void *argument);
 
@@ -259,7 +262,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(1);
   }
 
   /** Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
@@ -275,7 +278,7 @@ void SystemClock_Config(void)
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(1);
   }
 }
 
@@ -335,7 +338,7 @@ static void MX_ADC_Init(void)
   hadc.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_HIGH;
   if (HAL_ADC_Init(&hadc) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(1);
   }
   /* USER CODE BEGIN ADC_Init 2 */
 
@@ -369,21 +372,21 @@ static void MX_I2C2_Init(void)
   hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
   if (HAL_I2C_Init(&hi2c2) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(2);
   }
 
   /** Configure Analogue filter
   */
   if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(2);
   }
 
   /** Configure Digital filter
   */
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(2);
   }
   /* USER CODE BEGIN I2C2_Init 2 */
 
@@ -412,7 +415,7 @@ static void MX_IWDG_Init(void)
   hiwdg.Init.Reload = 4095;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(3);
   }
   /* USER CODE BEGIN IWDG_Init 2 */
 #endif
@@ -446,7 +449,7 @@ static void MX_LPTIM1_Init(void)
   hlptim1.Init.Input2Source = LPTIM_INPUT2SOURCE_GPIO;
   if (HAL_LPTIM_Init(&hlptim1) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(4);
   }
   /* USER CODE BEGIN LPTIM1_Init 2 */
   LPTIM1_EXTI_ENABLE_IT();
@@ -481,7 +484,7 @@ static void MX_LPTIM3_Init(void)
   hlptim3.Init.Input2Source = LPTIM_INPUT2SOURCE_GPIO;
   if (HAL_LPTIM_Init(&hlptim3) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(5);
   }
   /* USER CODE BEGIN LPTIM3_Init 2 */
 
@@ -517,19 +520,19 @@ static void MX_LPUART1_UART_Init(void)
   hlpuart1.FifoMode = UART_FIFOMODE_ENABLE;
   if (HAL_UART_Init(&hlpuart1) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(6);
   }
   if (HAL_UARTEx_SetTxFifoThreshold(&hlpuart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(6);
   }
   if (HAL_UARTEx_SetRxFifoThreshold(&hlpuart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(6);
   }
   if (HAL_UARTEx_EnableFifoMode(&hlpuart1) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(6);
   }
   /* USER CODE BEGIN LPUART1_Init 2 */
   LPUART1_EXTI_ENABLE_IT();
@@ -542,7 +545,7 @@ static void MX_LPUART1_UART_Init(void)
 		wakeup_config.WakeUpEvent = UART_WAKEUP_ON_READDATA_NONEMPTY;
 
 		// Configurer le réveil UART
-		if (HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, wakeup_config) != HAL_OK) Error_Handler();
+		if (HAL_UARTEx_StopModeWakeUpSourceConfig(&hlpuart1, wakeup_config) != HAL_OK) Error_Handler(7);
 
 	  __HAL_UART_ENABLE_IT(&hlpuart1, UART_IT_WUF);  // Activation interruption WakeUp UArt from STop mode
 
@@ -592,7 +595,7 @@ void MX_RTC_Init(void)
   hrtc.Init.BinMixBcdU = RTC_BINARY_MIX_BCDU_2;
   if (HAL_RTC_Init(&hrtc) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(8);
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
@@ -608,7 +611,7 @@ void MX_RTC_Init(void)
   sTime.StoreOperation = RTC_STOREOPERATION_RESET;
   if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(8);
   }
   sDate.WeekDay = RTC_WEEKDAY_MONDAY;
   sDate.Month = RTC_MONTH_JANUARY;
@@ -616,11 +619,11 @@ void MX_RTC_Init(void)
   sDate.Year = 0x0;
   if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(8);
   }
   if (HAL_RTCEx_SetSSRU_IT(&hrtc) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(8);
   }
 
   /** Enable the Alarm A
@@ -638,7 +641,7 @@ void MX_RTC_Init(void)
   sAlarm.Alarm = RTC_ALARM_A;
   if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(9);
   }
 
   /** Enable the Alarm B
@@ -647,7 +650,7 @@ void MX_RTC_Init(void)
   sAlarm.Alarm = RTC_ALARM_B;
   if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(9);
   }
   /* USER CODE BEGIN RTC_Init 2 */
 
@@ -675,7 +678,7 @@ void MX_SUBGHZ_Init(void)
   hsubghz.Init.BaudratePrescaler = SUBGHZSPI_BAUDRATEPRESCALER_8;
   if (HAL_SUBGHZ_Init(&hsubghz) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(10);
   }
   /* USER CODE BEGIN SUBGHZ_Init 2 */
 
@@ -780,7 +783,7 @@ static void MX_GPIO_Init(void)
       // Configuration automatique avec HAL_EXTI_SetConfigLine
       if (HAL_EXTI_SetConfigLine(&hexti_pa12, &exti_config) != HAL_OK)
       {
-          Error_Handler();
+          Error_Handler(0);
       }*/
   /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -872,17 +875,27 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
-void Error_Handler(void)
+void Error_Handler(uint8_t num)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  const char* error_msg = "ERROR: System failure\r\n";
+
+  // Forcer l'état UART à READY au cas où il était occupé (BUSY_TX) par un log
+  hlpuart1.gState = HAL_UART_STATE_READY;
+
+  char error_msg[] = "\r\n---[DEBUG] ERROR_HANDLER  ---\r\n";
+  error_msg[27] = (num/10)+'0';
+  error_msg[28] = (num%10) +'0';
   uint16_t len = strlen(error_msg);
 
-  // Envoi direct via HAL_UART
-  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 3000);
-  HAL_Delay(1000);
+  // Envoi direct et bloquant via HAL_UART avec un timeout court
+  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+
+  // Attente active (environ 0,1s à 48MHz) car HAL_Delay ne fonctionne plus sans IRQ
+  for (volatile uint32_t i = 0; i < 500000; i++) {
+      __asm("NOP");
+  }
 
   HAL_NVIC_SystemReset();
 

@@ -51,13 +51,15 @@ typedef enum  {
     EVENT_LORA_TX_STEP,
 	EVENT_LORA_IDLE,
     EVENT_LORA_ACK_TIMEOUT,
+	EVENT_LORA_RX_TIMEOUT,
 	EVENT_AlarmB,
 	#if CODE_TYPE == 'C'
 		EVENT_TIMER_1min,
 		EVENT_TIMER_10min,
 		EVENT_TIMER_3Voies,
 	#endif
-	EVENT_LORA_RX_TEST
+	EVENT_LORA_RX_TEST,
+	EVENT_LORA_RAW_RX
 } EventId_t;
 
 #define TIMER_PERIOD_MS  50000   // 50s
@@ -181,6 +183,7 @@ void save_diagnostic_data(void);
 void load_diagnostic_data(void);
 void check_stack_usage(void);
 uint32_t get_rtc_timestamp(void);
+uint32_t get_rtc_timestamp_lock_free(void);
 void display_current_time(void);
 void set_rtc_time_date(void);
 HAL_StatusTypeDef set_rtc_from_timestamp(uint32_t timestamp);
@@ -191,6 +194,7 @@ void init_functions2(void);
 void init_functions4(void);
 void check_all_clocks(void);
 void test_stop_mode(void);
+void Error_Handler(uint8_t num);
 
 
 

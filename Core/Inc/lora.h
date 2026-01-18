@@ -181,6 +181,16 @@ typedef struct
 
 typedef struct
 {
+    uint8_t payload[MESS_LG_MAX + 5]; // [dest][reseau][emetteur][param][len][data...]
+    uint16_t size;
+    int16_t rssi;
+    int8_t snr;
+} lora_RawPacket_t;
+
+void lora_process_rx_frame(lora_RawPacket_t* raw);
+
+typedef struct
+{
         uint8_t destAddr;              //!<  Destination address
         uint8_t reseauAddr;				// Adresse du reseau
         uint8_t len;                     //!< Payload Length

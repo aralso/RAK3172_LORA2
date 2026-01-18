@@ -255,7 +255,7 @@ BSP_ADC_ReadChannels(uint32_t channel)
   /* Start Calibration */
   if (HAL_ADCEx_Calibration_Start(&hadc) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(16);
   }
 
   /* Configure Regular Channel */
@@ -264,13 +264,13 @@ BSP_ADC_ReadChannels(uint32_t channel)
   sConfig.SamplingTime = ADC_SAMPLETIME_160CYCLES_5; //ADC_SAMPLINGTIME_COMMON_1;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler(17);
   }
 
   if (HAL_ADC_Start(&hadc) != HAL_OK)
   {
     /* Start Error */
-    Error_Handler();
+    Error_Handler(18);
   }
   /** Wait for end of conversion */
   HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);

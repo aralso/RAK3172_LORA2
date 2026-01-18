@@ -26,7 +26,7 @@
 
 #define CODE_VERSION  "1.11"
 
-#define NO_SLEEP
+//#define NO_SLEEP
 
 #define END_NODE   // sinon  Define CONCENTRATOR
 
@@ -34,6 +34,7 @@
 
 #ifdef END_NODE
 	#define CODE_TYPE 'A'  // A:End_node Radar  B-C:régul chaudiere garches(B:Thermo C:moteur)
+
 	#if CODE_TYPE == 'A'
 		#define My_Address 'U'
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
@@ -45,7 +46,7 @@
 		#define mode_I2C
 		#define mode_LPUART1
 		#define CLASS LORA_CLASS_A  // A:sleep,  B:ecoute chaque 30 seconde,  C:rx tout le temps
-		#define TEMP_PERIOD	30  // 30 secondes
+		#define TEMP_PERIOD	30  // Periode de mesure temperature - 30 secondes
 		#define mode_sleep
 		#define KeepAlive 1
 

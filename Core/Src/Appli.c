@@ -10,6 +10,7 @@
  clignot sorties, pwm,  antirebond 2 boutons, 2e uart
 TODO BUG : timer apres uart_rx, HLH
 
+ v1.12 12/2025 : modif timers : LPTIM1 pour freertos, RTC pour Radio
  v1.11 12/2025 : modif STOP2 freertos par timer LPTIM1
  v1.10 11/2025 : divers bugs lora, vrefInt
  v1.9 11/2025 : process LORA RX-TX, hdc1080, VRefInt, i2c(temp)
@@ -172,13 +173,13 @@ void init1()  // avant KernelInitialize
 
       /*if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 20000) != HAL_OK)
       {
-        Error_Handler();
+        Error_Handler(0);
       }*/
 
 
 	  /*if (HAL_LPTIM_TimeOut_Start_IT(&hlptim1, 8000,0) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
 	  {
-	    Error_Handler();
+	    Error_Handler(0);
 	  }*/
       /* Disable autoreload write complete interrupt */
       //__HAL_LPTIM_DISABLE_IT(&hlptim1, LPTIM_IT_ARROK);
@@ -435,7 +436,7 @@ void init4(void)
     // 1ms / tick
 	/*  if (HAL_LPTIM_Counter_Start_IT(&hlptim1, 32000) != HAL_OK)  // 4IT:ARROK, ARRM, REPOK, UPDATE
 	  {
-	    Error_Handler();
+	    Error_Handler(0);
 	  }*/
 
 	  // IT importantes :
@@ -1014,6 +1015,12 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 
+				case EVENT_LORA_RX_TIMEOUT: { // timeout du RX
+					LOG_INFO("Timeout LORA RX  g_rx:%i ", evt.source);
+					relance_radio_rx(0);
+					break;
+				}
+
 				case EVENT_LORA_IDLE: {  // Remise Radio en Sleep ou RX (apres délai RX)
 		        	relance_radio_rx(0);  // RX ou sleep
 					break;
@@ -1025,6 +1032,10 @@ void Appli_Tsk(void *argument)
 					if (evt.data) evt.data--;
 					traitement_rx(message_recu.data, evt.data);
 					//lora_handle_event_rx();
+					break;
+				}
+				case EVENT_LORA_RAW_RX: {
+					lora_process_rx_frame(&raw_rx_packet);
 					break;
 				}
 				case EVENT_LORA_RX_TEST: {
@@ -1249,7 +1260,7 @@ void Appli_Tsk(void *argument)
 				}
 				case EVENT_TIMER_20min: {
 
-					//LOG_INFO("a");
+					LOG_INFO("abc");
 					//uint8_t Vbat = GetBatteryLevel();
 					//uint16_t mvolt = Vbat*4+2600;
 

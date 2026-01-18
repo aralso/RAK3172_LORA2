@@ -1268,11 +1268,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				}
 				if ((message_in[5] == 'F') && (longueur_m == 6))   // CHLF  Forcage chauffage
 				{
-                   envoie_mess_ASC(param_def, "%cCHLF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
+                   envoie_mess_ASC(param_def, "%cCHEF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
 				}
 				if ((message_in[5] == 'A') && (longueur_m == 6))   // CHLA  Arret chauffage
 				{
-                   envoie_mess_ASC(param_def, "%cCHLA%i", message_in[1], ch_arret);
+                   envoie_mess_ASC(param_def, "%cCHEA%i", message_in[1], ch_arret);
 				}
 				if ((message_in[5] == 'P') && (longueur_m == 6))   // CHLP  Planning chauffage
 				{
@@ -1295,19 +1295,20 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
                    for (uint8_t i=0; i<NB_MAX_PGM; i++)
 					{
 						if (ch_debut[i] != ch_fin[i])
-							envoie_mess_ASC(param_def, "%cCHLP%i%02X%02X%i%02X%02X", message_in[1], i, \
+							envoie_mess_ASC(param_def, "%cCHEP%i%02X%02X%i%02X%02X", message_in[1], i, \
 									ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
 					}
 				}
-				if ((message_in[5] == 'T') && (longueur_m == 6))   // CHLTT  Lecture de tout
+				if ((message_in[5] == 'T') && (message_in[6] == 'T') && (longueur_m == 6))   // CHLTT  Lecture de tout
 				{
 					for (uint8_t i=0; i<NB_MAX_PGM; i++)
 					{
 						if (ch_debut[i] != ch_fin[i])
-							envoie_mess_ASC(param_def, "%cCHLP%i%02X%02X%i%02X%02X", message_in[1], i, \
+							envoie_mess_ASC(param_def, "%cCHEP%i%02X%02X%i%02X%02X", message_in[1], i, \
 									ch_debut[i], ch_fin[i], ch_type[i], ch_consigne[i], ch_cons_apres[i]);
 					}
-
+                    envoie_mess_ASC(param_def, "%cCHEF%04X%02X", message_in[1], forcage_duree, forcage_consigne);
+                    envoie_mess_ASC(param_def, "%cCHEA%i", message_in[1], ch_arret);
 				}
 
 
@@ -1524,7 +1525,13 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ((message_in[4] == 'S') && (message_in[5] == 'I'))   // RLSI : Lecture Radio RSSI (recu du concent)
               {
             	  // envoi à l'uart du end_node
-        		  LOG_INFO("RSSI:%s node:%i", message_in, nodes[0].latestRssi);
+            	  // recherche du node emetteur
+            	  uint8_t node_id = Node_id(message_in[1]);
+            	  if (node_id)
+            		  LOG_INFO("RSSI:%s node:%i", message_in, nodes[node_id-1].latestRssi);
+            	  else
+            		  LOG_INFO("RSSI:%s" , message_in);
+
               }
 		  }
 		  if ((message_in[2] == 'R') && (message_in[3] == 'E'))   // RE : Ecriture Radio
@@ -1634,6 +1641,10 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		      if ( (message_in[4] =='1'))  // LEcture TL1
 		      {
 			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
+		      }
+		      if ( (message_in[4] =='3'))  // TL3 Test error_handler
+		      {
+		    	  Error_Handler(14);
 		      }
 		      if ( (message_in[4] =='L')  && (longueur_m==7))  // LEcture Log 1TLL01
 		      {

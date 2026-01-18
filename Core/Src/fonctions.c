@@ -1137,6 +1137,29 @@ void set_rtc_time_date(void)
              sDate.Date, sDate.Month, sDate.Year);
 }
 
+#define BCD2DEC(val) ((((val) >> 4) * 10) + ((val) & 0x0F))
+
+uint32_t get_rtc_timestamp_lock_free(void)
+{
+    // Sur STM32WL, lire TR verrouille DR dans les registres d'ombre (shadow registers)
+    // assurant une cohérence parfaite entre heure et date.
+    uint32_t tr = RTC->TR;
+    uint32_t dr = RTC->DR;
+
+    struct tm timeinfo = {
+        .tm_sec  = BCD2DEC((tr & (RTC_TR_ST | RTC_TR_SU)) >> RTC_TR_SU_Pos),
+        .tm_min  = BCD2DEC((tr & (RTC_TR_MNT | RTC_TR_MNU)) >> RTC_TR_MNU_Pos),
+        .tm_hour = BCD2DEC((tr & (RTC_TR_HT | RTC_TR_HU)) >> RTC_TR_HU_Pos),
+        .tm_mday = BCD2DEC((dr & (RTC_DR_DT | RTC_DR_DU)) >> RTC_DR_DU_Pos),
+        .tm_mon  = BCD2DEC((dr & (RTC_DR_MT | RTC_DR_MU)) >> RTC_DR_MU_Pos) - 1,
+        // RTC Year est sur 0-99, struct tm attend année depuis 1900.
+        // On suppose que l'année 00-99 correspond à 2000-2099 (soit 100-199 pour struct tm)
+        .tm_year = BCD2DEC((dr & (RTC_DR_YT | RTC_DR_YU)) >> RTC_DR_YU_Pos) + 100
+    };
+
+    return (uint32_t)mktime(&timeinfo);
+}
+
 uint32_t get_rtc_timestamp(void)
 {
     RTC_TimeTypeDef sTime;

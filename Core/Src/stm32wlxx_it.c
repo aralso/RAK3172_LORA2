@@ -71,18 +71,26 @@ extern TIM_HandleTypeDef htim16;
 
 /* USER CODE BEGIN EV */
 
-void affich_erreur(void)
+/*void affich_erreur(void)
 {
   __disable_irq();
-  const char* error_msg = "ERROR: System failure\r\n";
+
+  // Forcer l'état UART à READY
+  hlpuart1.gState = HAL_UART_STATE_READY;
+
+  const char* error_msg = "\r\n--- [DEBUG] ERROR (IT/HardFault) ---\r\n";
   uint16_t len = strlen(error_msg);
 
-  // Envoi direct via HAL_UART
-  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 3000);
-  HAL_Delay(1000);
+  // Envoi direct via HAL_UART avec un timeout court
+  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+
+  // Attente active (environ 1s à 48MHz) car HAL_Delay ne fonctionne plus sans IRQ
+  for (volatile uint32_t i = 0; i < 5000000; i++) {
+      __asm("NOP");
+  }
 
   HAL_NVIC_SystemReset();
-}
+}*/
 
 /* USER CODE END EV */
 
@@ -95,7 +103,7 @@ void affich_erreur(void)
 void NMI_Handler(void)
 {
   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-	affich_erreur();
+	Error_Handler(20);
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
    while (1)
@@ -110,7 +118,7 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
-	affich_erreur();
+	Error_Handler(21);
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -126,7 +134,7 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-	affich_erreur();
+	Error_Handler(22);
 
   /* USER CODE END MemoryManagement_IRQn 0 */
   while (1)
@@ -142,7 +150,7 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
   /* USER CODE BEGIN BusFault_IRQn 0 */
-	affich_erreur();
+	Error_Handler(23);
 
   /* USER CODE END BusFault_IRQn 0 */
   while (1)
@@ -158,7 +166,7 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
-	affich_erreur();
+	Error_Handler(24);
 
   /* USER CODE END UsageFault_IRQn 0 */
   while (1)

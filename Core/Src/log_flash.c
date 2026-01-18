@@ -89,7 +89,7 @@ uint8_t log_write(uint8_t code, uint8_t c1, uint8_t c2, uint8_t c3, const char* 
     	nb_max_log_write++;
 
 		// Remplir la structure
-		entry.timestamp = get_rtc_timestamp(); //HAL_GetTick()/1000;  // en secondes
+		entry.timestamp = get_rtc_timestamp_lock_free(); //HAL_GetTick()/1000;  // en secondes
 		entry.code = code;
 		entry.c1 = c1;
 		entry.c2 = c2;
