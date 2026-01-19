@@ -74,6 +74,8 @@ extern uint8_t uart_rx_char;
 extern osThreadId_t defaultTaskHandle;
 extern IWDG_HandleTypeDef hiwdg;
 
+extern lora_RawPacket_t raw_rx_packet;
+
 HAL_StatusTypeDef configure_lse_oscillator(void);
 HAL_StatusTypeDef configure_lsi_oscillator(void);
 

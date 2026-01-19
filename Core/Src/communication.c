@@ -57,7 +57,7 @@ uint32_t ReadVBAT(void);
 	Radio :
 	RLSI : niveau rssi recu du node 0
 	RESl : passage raido en sleep
-	RERXxy Ecriture param Radio TX paramx = y
+	RERXxy Ecriture param Radio TX paramx = y  P
 
 	Valeurs Lect/Ecrit
 	VEPa : Param_def
@@ -1533,6 +1533,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             		  LOG_INFO("RSSI:%s" , message_in);
 
               }
+              if ( (message_in[4] =='T')  && (longueur_m==5))  // RLT Radio TX
+              {
+            	  GetRadioTxParam(message_in[1]);
+              }
+              if ( (message_in[4] =='R')  && (longueur_m==5))  // RLR Radio RX
+              {
+            	  GetRadioRxParam(message_in[1]);
+              }
 		  }
 		  if ((message_in[2] == 'R') && (message_in[3] == 'E'))   // RE : Ecriture Radio
 		  {
@@ -1541,9 +1549,15 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("Radio Sleep");
 				  Radio.Sleep();
 			  }
-              if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // RERXxy Radio TX paramx = y
+              if ( (message_in[4] =='T') && (message_in[5] =='X') && (longueur_m==8))  // RETXxy Radio TX paramx = y
               {
+            	  // 1:power, 2:bandWidth, 3:SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
             	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+              }
+              if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // RERXxy Radio RX paramx = y
+              {
+            	  // 2:bandWidth, 3:DataRate-SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
+            	  SetRadioRxParam(message_in[6]-'0', message_in[7]-'0');
               }
           }
 
