@@ -30,7 +30,6 @@
 void MX_RTC_Init(void);
 #define h hrtc
 #include "fonctions.h"
-void toggle_led(void);
 
 
 /* USER CODE END Includes */
@@ -381,7 +380,7 @@ void TIMER_IF_DelayMs(uint32_t delay)
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *h)
 {
   /* USER CODE BEGIN HAL_RTC_AlarmAEventCallback */
-  toggle_led(); // DEBUG: Toggle LED when Alarm A fires
+  //toggle_led(); // DEBUG: Toggle LED when Alarm A fires
   /* USER CODE END HAL_RTC_AlarmAEventCallback */
   UTIL_TIMER_IRQ_MAP_PROCESS();
   /* USER CODE BEGIN HAL_RTC_AlarmAEventCallback_Last */

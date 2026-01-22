@@ -6,11 +6,26 @@
 
 
  TODO :
-, bug get_battery_level
- clignot sorties, pwm,  antirebond 2 boutons, 2e uart
-TODO BUG : timer apres uart_rx, HLH
+ clignot sorties, pwm,
+ antirebond 2 boutons,
+ 2e uart
+ séparer en 2 taches (appli, lora)
+ mettre messages longs (10k)
+ lora classe B
+ planning chaudiere
 
- v1.12 12/2025 : modif timers : LPTIM1 pour freertos, RTC pour Radio
+ améliorer/verifier :
+ consommation veille, avec oscillo
+ lptim2 ou RTC pour radio
+ config de lptim1 pour freertos
+ envoie log
+ lecture erreurs
+ verif HAL_delay et osDelay
+ verif demarrage sans uart
+ verif get_battery_level
+ verif GetTimeOnAir()
+
+ v1.12 12/2025 : modif timers : LPTIM1 pour freertos, RTC pour Radio, valid comm lora
  v1.11 12/2025 : modif STOP2 freertos par timer LPTIM1
  v1.10 11/2025 : divers bugs lora, vrefInt
  v1.9 11/2025 : process LORA RX-TX, hdc1080, VRefInt, i2c(temp)
@@ -23,11 +38,9 @@ TODO BUG : timer apres uart_rx, HLH
  v1.2 09/2025 : pile envoi uart, timer, code_erreur
  v1.1 09/2025 : STM32CubeMX + freertos+ subGhz+ Uart2+ RTC+ print_log+ event_queue
 
-LPTIM1 : interrup toutes les 10 secondes pour action watchdog, etc...
-LPTIM2 : timer freertos en mode stop
-LPTIM3 : timers expirés de la radio
+LPTIM1 : timer freertos en mode stop
 Alarm_RTC : interrupt toutes les 24 heures
-
+RTC : pour radio
 
 Conso en mode Stop2 (sans uart) : 2uA
 	Coeur Stop 2 (cpu+ram) : 0,4 uA  (en STOP1:+3uA)
@@ -35,7 +48,6 @@ Conso en mode Stop2 (sans uart) : 2uA
 	RTC (avec LSE)		   : 0,25uA
 	IWDG (LSI)			   : 0,4uA
 	LPTIM1   			   : 0,3uA
-	LPTIM3				   : 0,15
 	Radio en sleep		   : 0,05uA
 
 Autres :
@@ -62,6 +74,8 @@ Conso en MSI_range8 et HSI : 1,33mA
 #include <stdarg.h>   // Pour va_list (si vous utilisez print_log)
 #include <math.h>
 #include "hdc1080.h"
+
+uint8_t uart_available = true; // Flag pour tracker l'état UART
 
 extern TimerHandle_t HTimer_24h;
 extern TimerHandle_t HTimer_20min;
@@ -154,22 +168,43 @@ void lecture_temp_i2c(uint8_t);
 void init1()  // avant KernelInitialize
 {
 
-	  /* make sure that no LPUART transfer is on-going */
-	  while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET);
 
+	    uint32_t timeout = HAL_GetTick() + 100; // 100ms max
+	    while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET) {
+	        if (HAL_GetTick() > timeout) {
+	            // UART non connecté ou bloqué -> on désactive
+	            HAL_UART_DeInit(&hlpuart1);
+	            uart_available = false;
+	            break; // ✅ Sortir de la boucle MAIS continuer init1()
+	        }
+	    }
 
-	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);  // Demarrage réception Uart1
+	    toggle_led(1);
 
+	    timeout = HAL_GetTick() + 100; // 100ms
+		for(;;) {
+	        if (HAL_GetTick() > timeout) break;
+	    }
 
-	  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
-	  init_msg[0] = dest_log;
-	  init_msg[1] = My_Address;
-	  init_msg[27] = get_log_level()+'0';
-	  uint16_t len = strlen(init_msg);
-	  #ifdef mode_LPUART1
-		  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
-	  #endif
-	  HAL_Delay(500);
+      if (uart_available) {
+
+		  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
+		  init_msg[0] = dest_log;
+		  init_msg[1] = My_Address;
+		  init_msg[27] = get_log_level()+'0';
+		  uint16_t len = strlen(init_msg);
+		  #ifdef mode_LPUART1
+			  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 3000);
+		  #endif
+		  HAL_Delay(500);
+      }
+
+      toggle_led(1);
+
+	    timeout = HAL_GetTick() + 100; // 100ms
+		for(;;) {
+	        if (HAL_GetTick() > timeout) break;
+	    }
 
       init_functions1();
 
@@ -254,6 +289,10 @@ void init4(void)
 
     init_functions4();  // watchdog, Log_flash, eeprom
     log_write('R', 0, 0x00, 0x00, "Init");
+
+    if (uart_available) {
+  	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);  // Demarrage réception Uart1
+    }
 
 	#ifndef SANS_RADIO
 		MX_SubGHz_Phy_Init();  // init radio, mutex lora
@@ -475,7 +514,9 @@ void test_i2c()
 			  messa[3] = '\n';
 			  messa[4] = '\r';
 			  messa[5] = 0;
-			  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			  if (uart_available) {
+				  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			  }
 
 		      osDelay(100);
 			  //HDC1080_init();
@@ -494,7 +535,9 @@ void test_i2c()
 			messa[7] = '\n';
 			messa[8] = '\r';
 			messa[9] = 0;
-			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			if (uart_available) {
+				HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+			}
 			//HAL_Delay(500);
 		      osDelay(1000);
 
@@ -534,7 +577,9 @@ void test_i2c()
 	      messa[9] = '\n';
 	      messa[10] = '\r';
 	      messa[11] = 0;
-	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+	      if (uart_available) {
+	    	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+	      }
 
 	      osDelay(500);
 		  HAL_Delay(500);
@@ -555,7 +600,9 @@ void test_i2c()
 	      messa[9] = '\n';
 	      messa[10] = '\r';
 	      messa[11] = 0;
-	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+	      if (uart_available) {
+	    	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+	      }
 
 		  HAL_Delay(500);
 
@@ -583,7 +630,9 @@ void test_i2c()
 		messa[7] = '\n';
 		messa[8] = '\r';
 		messa[9] = 0;
-		HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+		if (uart_available) {
+			HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+		}
 		osDelay(30);
 	}*/
 
@@ -627,7 +676,9 @@ void lecture_temp_i2c(uint8_t nb)
     messa[9] = '\n';
     messa[10] = '\r';
     messa[11] = 0;
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+    if (uart_available) {
+        HAL_UART_Transmit(&hlpuart1, (uint8_t*)messa, strlen(messa), 3000);
+    }
 
     osDelay(500);
 }
@@ -984,10 +1035,16 @@ void Appli_Tsk(void *argument)
             //LOG_INFO("Événement #%i: type=%d", event_count, evt.type);
         	switch (evt.type) {
 
+				case EVENT_LED: {
+					toggle_led(1);
+					//LOG_INFO("Toggle Led1");
+					break;
+				}
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
 					// Actions pour bouton pressé
 					//HAL_GPIO_TogglePin(LED1_GPIO, LED1_Pin); // Toggle LED PA13
+					//toggle_led(1);
 
 					// Envoyer message LoRa
 					//char messa[] = "Button pressed!";
@@ -1371,7 +1428,9 @@ void assert_failed(const char *file, int line)
     int len = snprintf(msg, sizeof(msg), "-- ASSERT failed at %s:%d\r\n", file, line);
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    if (uart_available) {
+        HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    }
 
     HAL_Delay(2000);
 

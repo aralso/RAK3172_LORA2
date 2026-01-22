@@ -26,6 +26,12 @@
 
 #define RX_delai	3000
 
+/* consommation et db :
+SF7, 0db => 31ms à 20mA, max 110db
+SF8, 0db => 62ms à 20mA, max 113db
+SF9, 0db => 125ms à 20mA, max 116db
+SF9, 6db => 125ms à 50mA, max 122db
+*/
 double floor (double);
 struct radio_TxParam_s radio_TxParam;
 struct radio_RxParam_s radio_RxParam;
@@ -72,6 +78,7 @@ static osMutexId_t lora_bufferMutex;
 static uint8_t g_lora_class;
 static uint32_t g_next_beacon_at_ms = 0;             // prochaine balise estimée
 static volatile uint32_t g_lptim1_10s_since_beacon = 0; // nb déclenchements LPTIM1 depuis dernière balise
+static volatile bool g_waiting_beacon = false; // Flag pour différencier Timer TX vs Réveil Balise
 
 extern QueueHandle_t Event_QueueHandle;
 extern osThreadId_t Uart_TX_TaskHandle;
@@ -96,7 +103,15 @@ TimerHandle_t HTimer_loraTX;
 
 static void TimerloraTXCallback(TimerHandle_t xTimer)   // interruption
 {
-	event_t evt = { EVENT_TIMER_LORA_TX, 0, 0 };
+	uint8_t event_type = EVENT_TIMER_LORA_TX;
+
+	// Si on attendait un réveil balise, on change le type d'événement
+	if (g_waiting_beacon) {
+		g_waiting_beacon = false;
+		event_type = EVENT_LORA_REVEIL_BALISE;
+	}
+
+	event_t evt = { event_type, 0, 0 };
 	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
 	{
 		code_erreur = Timer_callback; 		err_donnee1 = 9;
@@ -212,7 +227,7 @@ static TimerTime_t GetTimeOnAir( int8_t datarate, uint16_t pktLen )
     return timeOnAir;
 }
 
-
+// pas utilisé
 bool RegionEU868TxConfigM( TxConfigParams_t* txConfig, int8_t* txPower, TimerTime_t* txTimeOnAir )
 {
     RadioModems_t modem;
@@ -411,6 +426,7 @@ void SetRadioTxParam (uint8_t param, uint8_t val)
 
 }
 
+// pas utilisé
 uint8_t SendFrameModif( uint8_t channel )
 {
     uint8_t status = 1;
@@ -492,10 +508,10 @@ void configure_radio_parameters(void)
 
 		radio_RxParam.freq = 868000000;
 		radio_RxParam.channel = 1;
-		radio_RxParam.DR = 0;
+		radio_RxParam.DR = DR_defaut;   // 5
     	radio_RxParam.modem = MODEM_LORA;
-    	radio_RxParam.bandwidth = 0; 		// Bandwidth 0:125k 1:250k 2:500k
-    	radio_RxParam.datarate = 12;		// SF Datarate: 6=64chips, 7=128 chips 12=4096chips
+    	radio_RxParam.bandwidth = Bandwidths[DR_defaut]; 		// Bandwidth 0:125k 1:250k 2:500k
+    	radio_RxParam.datarate = DataratesEU868[DR_defaut];		// SF Datarate: 6=64chips, 7=128 chips 12=4096chips
     	radio_RxParam.coderate = 1;			// Coderate: 1:4/5
     	radio_RxParam.bandwidthAfc = 0;		// AFC bandwidth (N/A pour LoRa)
     	radio_RxParam.preambleLen = 8;		// Preamble length
@@ -1125,7 +1141,11 @@ void lora_process_rx_frame(lora_RawPacket_t* raw)
         g_lptim1_10s_since_beacon = 0;
 		// Recalage fin: viser un réveil très proche de la prochaine balise
 		// Marge initiale 10 ms, pourra être ajustée dynamiquement
-        lptim_program_compare_advance_ms(10);
+		// Recalage fin: viser un réveil très proche de la prochaine balise
+		// Marge initiale 10 ms, pourra être ajustée dynamiquement
+		// CORRECTION STOP2 : Utiliser Timer FreeRTOS au lieu de LPTIM direct
+		g_waiting_beacon = true;
+        xTimerChangePeriod( HTimer_loraTX, pdMS_TO_TICKS(10), 0 );
 
 		// Si présence d’une adresse de destinataire immédiat (payload[7])
         if ((len >= 3) && (payload[7] == My_Address))

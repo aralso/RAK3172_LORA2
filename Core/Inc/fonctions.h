@@ -30,6 +30,7 @@ typedef struct {
 
 typedef enum  {
     EVENT_BUTTON = 0,
+	EVENT_LED,
     EVENT_LORA_TX,
 	EVENT_LORA_TX_DONE,
 	EVENT_TIMER_LORA_TX,
@@ -170,6 +171,7 @@ uint8_t decod_dec8 (uint8_t* index);
 uint16_t decod_dec16 (uint8_t* index);
 void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max);
 float PIDd_Compute(PID_t *pid, float setpoint, float measurement);
+void toggle_led(uint8_t num);
 
 uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);

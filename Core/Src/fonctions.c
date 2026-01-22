@@ -19,6 +19,10 @@
 #include <time.h>        // Pour struct tm et mktime
 #include "stm32_timer.h"
 
+// Temps/Délai :
+//osKernelGetTickCount : permet de compter le temps
+//osDelay : pour faire un delay , apres démarrage freertos
+
 // === SYSTÈME DE WATCHDOG ===
 // Tableau de suivi des tâches
 static watchdog_task_info_t watchdog_tasks[WATCHDOG_TASK_COUNT];
@@ -74,6 +78,8 @@ static const char* watchdog_task_names[WATCHDOG_TASK_COUNT] = {
 TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du watchdog
 TimerHandle_t HTimer_24h;
 TimerHandle_t HTimer_20min;
+TimerHandle_t HTimer_LED;
+
 #if (CODE_TYPE == 'B')  // garches chaudiere thermometre
 	TimerHandle_t HTimer_temp_period;
 	static void Timertemp_periodCallback(TimerHandle_t xTimer);
@@ -91,6 +97,7 @@ TimerHandle_t HTimer_20min;
 static void WatchdogTimerCallback(TimerHandle_t xTimer);
 static void Timer24hCallback(TimerHandle_t xTimer);
 static void Timer20minCallback(TimerHandle_t xTimer);
+static void TimerLEDCallback(TimerHandle_t xTimer);
 
 void SystemClock_Config(void);
 
@@ -99,9 +106,10 @@ void configure_uart_wakeup(void)
 
 }
 
-void toggle_led(void)  // Sorties : A6, A7, A13
+void toggle_led(uint8_t num)  // Sorties : LED1:PA13, LED2:PA6, LED3:PA7
 {
-	HAL_GPIO_TogglePin(LED1_Port, LED1_Pin); // Toggle LED PA13
+	if (num==1)
+		HAL_GPIO_TogglePin(LED1_Port, LED1_Pin); // Toggle LED PA13
 
 }
 
@@ -143,6 +151,15 @@ void init_functions2(void)
 			Timer20minCallback                     // Callback
 		);
 		if (HTimer_20min != NULL) xTimerStart(HTimer_20min, 0);
+
+		HTimer_LED = xTimerCreate(
+			"TimerLED",                          // Nom
+			pdMS_TO_TICKS(500),     // Période en ticks   1 secondes
+			pdTRUE,                             // Auto-reload
+			(void*)0,                           // ID optionnel
+			TimerLEDCallback                     // Callback
+		);
+		if (HTimer_LED != NULL) xTimerStart(HTimer_LED, 0);
 
 
 		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre
@@ -471,6 +488,13 @@ static void Timer20minCallback(TimerHandle_t xTimer)
 	}
 }
 
+void TimerLEDCallback(TimerHandle_t xTimer)
+{
+	event_t evt = { EVENT_LED, 0, 0 };
+	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS) {
+		code_erreur = Timer_callback; 		err_donnee1 = 6; }
+}
+
 
 #if CODE_TYPE == 'B'
 	void Timertemp_periodCallback(TimerHandle_t xTimer)
@@ -529,11 +553,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == GPIO_PIN_14) {
         // ⭐ VOTRE CODE ICI - Contexte d'interruption !
-
-        // ⚠️ ATTENTION : Contexte d'interruption - Code minimal !
-  	  char init_msg[] = "Bouton PA14\n\r";
-  	  uint16_t len = strlen(init_msg);
-  	  HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg, len, 500);
 
         // ✅ AUTORISÉ : Variables volatiles
         //static volatile bool button_pressed = true;
@@ -1082,7 +1101,9 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     int len = snprintf(msg, sizeof(msg), "-- Stack overflow in task: %s\r\n", pcTaskName);
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    if (uart_available) {
+        HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    }
 
     HAL_Delay(2000);
     NVIC_SystemReset();
@@ -1096,7 +1117,9 @@ void vApplicationMallocFailedHook(void)
     char msg[] = "-- Malloc failed!\r\n";
     msg[0] = dest_log;
     msg[1] = My_Address;
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg)-1, HAL_MAX_DELAY);
+    if (uart_available) {
+        HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg)-1, HAL_MAX_DELAY);
+    }
 
     HAL_Delay(2000);
     NVIC_SystemReset();

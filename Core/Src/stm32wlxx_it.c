@@ -23,7 +23,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "string.h"
-void toggle_led(void);
 
 /* USER CODE END Includes */
 
@@ -82,7 +81,9 @@ extern TIM_HandleTypeDef htim16;
   uint16_t len = strlen(error_msg);
 
   // Envoi direct via HAL_UART avec un timeout court
-  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+  if (uart_available) {
+      HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+  }
 
   // Attente active (environ 1s à 48MHz) car HAL_Delay ne fonctionne plus sans IRQ
   for (volatile uint32_t i = 0; i < 5000000; i++) {
@@ -300,7 +301,7 @@ void EXTI15_10_IRQHandler(void)
 void RTC_Alarm_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
-  toggle_led(); // DEBUG: Toggle LED on any RTC Alarm (A or B)
+  //toggle_led(); // DEBUG: Toggle LED on any RTC Alarm (A or B)
   /* USER CODE END RTC_Alarm_IRQn 0 */
   HAL_RTC_AlarmIRQHandler(&hrtc);
   /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
@@ -314,7 +315,7 @@ void RTC_Alarm_IRQHandler(void)
 void SUBGHZ_Radio_IRQHandler(void)
 {
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 0 */
-	toggle_led();
+	//toggle_led();
   /* USER CODE END SUBGHZ_Radio_IRQn 0 */
   HAL_SUBGHZ_IRQHandler(&hsubghz);
   /* USER CODE BEGIN SUBGHZ_Radio_IRQn 1 */

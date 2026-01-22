@@ -18,13 +18,20 @@
 #endif
 
 
-#define LED1_Pin GPIO_PIN_13   // LED : PA13
+#define Nb_sorties	1
+
+#define LED1_Pin GPIO_PIN_13   // LED1 : PA13
 #define LED1_Port GPIOA
+#define LED2_Pin GPIO_PIN_6   // LED2 : PA6
+#define LED2_Port GPIOA
+#define LED3_Pin GPIO_PIN_7   // LED3 : PA7
+#define LED3_Port GPIOA
+
 #define bouton_Pin GPIO_PIN_14 // bouton : PA14
 #define bouton_GPIO_Port GPIOA
 #define ID_CONCENTRATOR	'H'
 
-#define CODE_VERSION  "1.11"
+#define CODE_VERSION  "1.12"
 
 //#define NO_SLEEP
 
@@ -109,6 +116,7 @@ extern uint8_t test_val;
 extern RTC_HandleTypeDef hrtc;
 extern uint8_t mess_pay[100];
 extern 	uint16_t temp_period;
+extern uint8_t uart_available;
 
 
 #endif /* INC_APPLI_H_ */

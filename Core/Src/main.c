@@ -173,6 +173,7 @@ int main(void)
 	  MX_SUBGHZ_Init();
 	#endif
 
+
   init1();  // IT UArt, démarre LPTIM1, message "RAK Init"
   /* USER CODE END 2 */
 
@@ -206,9 +207,11 @@ int main(void)
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   init2();  // queues, timers, taches Uart
+
   /* creation of Appli_Task */
   Appli_TaskHandle = osThreadNew(Appli_Tsk, NULL, &Appli_Task_attributes);
   init3();  // taches
+
 
   /* USER CODE END RTOS_EVENTS */
 
@@ -890,7 +893,9 @@ void Error_Handler(uint8_t num)
   uint16_t len = strlen(error_msg);
 
   // Envoi direct et bloquant via HAL_UART avec un timeout court
-  HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+  if (uart_available) {
+      HAL_UART_Transmit(&hlpuart1, (uint8_t*)error_msg, len, 100);
+  }
 
   // Attente active (environ 0,1s à 48MHz) car HAL_Delay ne fonctionne plus sans IRQ
   for (volatile uint32_t i = 0; i < 500000; i++) {

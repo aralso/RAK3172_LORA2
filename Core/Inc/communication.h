@@ -17,6 +17,8 @@
 #include "timers.h"
 #include "queue.h"
 
+#define UART_RX_QUEUE_SIZE 64
+
 
 #define dest_erreur	'1'
 #define dest_log '1'
@@ -74,8 +76,11 @@
 #define log_w_err_temp	0x04
 
 #define UART_SEND(msg) do { \
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, sizeof(msg) - 1, 3000); \
+    if (uart_available) { \
+        HAL_UART_Transmit(&hlpuart1, (uint8_t*)(msg), strlen(msg), 1000); \
+    } \
 } while(0)
+
 
 //osDelay(100);
 

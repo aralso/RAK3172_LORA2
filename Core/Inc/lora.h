@@ -35,6 +35,7 @@
 
 #define LORA_BROADCAST_ADDR         0x7D
 
+#define DR_defaut	5		// DR0=SF12  DR5:SF7-BW125  DR6=SF7-BW250  DR7=FSK
 
 // Machine d’états non bloquante pour la phase TX/ACK/RX
 typedef enum {

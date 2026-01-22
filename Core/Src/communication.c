@@ -66,7 +66,7 @@ uint32_t ReadVBAT(void);
 	VLN
 */
 
-uint8_t param_def = 0x10; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
+uint8_t param_def = 0x30; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
               // bit3:différé   bit4:pas d'ack  bit5:RX apres  bit6:sup si pas envoyé
 			  // 0x22 : Ack - 2 envois , rx apres
 /* gestion des erreurs
@@ -192,16 +192,23 @@ void verif_timout_uart_rx(void)
 	    }
 }
 
-uint8_t init_communication(void)
+uint8_t creation_queue_uart(void)
 {
-    // Créer la queue pour les caractères reçus
-    uart_rx_queue = xQueueCreate(UART_RX_QUEUE_SIZE, sizeof(uint8_t));
+    // Créer la queue pour les caractères reçus si pas déjà fait dans init1
+    if (uart_rx_queue == NULL) {
+        uart_rx_queue = xQueueCreate(UART_RX_QUEUE_SIZE, sizeof(uint8_t));
+    }
 
     if (uart_rx_queue == NULL) {
         //LOG_ERROR("Failed to create UART RX queue");
         return 1;
     }
+    return 0;
+}
 
+uint8_t init_communication(void)
+{
+	creation_queue_uart();  // queue de 64 caractères reçus
 
     //LOG_INFO("UART2 interrupt reception initialized");
 
@@ -316,14 +323,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 
         //if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, &xHigherPriorityTaskWoken))
-        if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, NULL))
-        	code_erreur = erreur_RX_queue;
+        if (uart_rx_queue != NULL) {
+            if (!xQueueSendFromISR(uart_rx_queue, &uart_rx_char, NULL))
+                code_erreur = erreur_RX_queue;
+        }
 
         // Forcer le changement de contexte si nécessaire
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
         // Redémarrer la réception - TOUJOURS À LA FIN
-        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
+        if (uart_available) {
+            HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
+        }
     }
 }
 
@@ -337,8 +348,10 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     	err_donnee1 = huart->ErrorCode;
 
         // Réinitialiser la réception
-        HAL_UART_AbortReceive_IT(&hlpuart1);
-        HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
+        if (uart_available) {
+            HAL_UART_AbortReceive_IT(&hlpuart1);
+            HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);
+        }
     }
 }
 
@@ -863,31 +876,34 @@ void Uart_TX_Tsk(void *argument)
 
 			if (stat == 0) {
 				// ⭐ MESSAGE DISPONIBLE - Envoyer
-				for (int i = 0; i < 30; i++)  // securite si uart deja utilise ailleurs
-				{
-				    //vTaskDelay(5);
-					HAL_UART_StateTypeDef st = HAL_UART_GetState(&hlpuart1);
-				    if ((st == HAL_UART_STATE_READY) || (st == HAL_UART_STATE_BUSY_RX))
-				    {
-						HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, mess.data, mess.length, 10000);
-						if (status != HAL_OK) {
-							code_erreur = code_erreur_envoi;
-							err_donnee1 = status;
-							err_donnee2 = mess.length;
-						}
-				        break;
-				    }
-				    /*else
-				    {
-						char init_msg1[] = " Uxx\n\r";
-						init_msg1[1] = (st >> 4) +'0';
-						init_msg1[2] = (st & 0x0F) +'0';
-						uint16_t len1 = strlen(init_msg1);
-						HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
+				if (uart_available) {
+					for (int i = 0; i < 30; i++)  // securite si uart deja utilise ailleurs
+					{
+					    //vTaskDelay(5);
+						HAL_UART_StateTypeDef st = HAL_UART_GetState(&hlpuart1);
+					    if ((st == HAL_UART_STATE_READY) || (st == HAL_UART_STATE_BUSY_RX))
+					    {
+							HAL_StatusTypeDef status = HAL_UART_Transmit(&hlpuart1, mess.data, mess.length, 10000);
+							if (status != HAL_OK) {
+								code_erreur = code_erreur_envoi;
+								err_donnee1 = status;
+								err_donnee2 = mess.length;
+							}
+					        break;
+					    }
+					    /*else
+					    {
+							char init_msg1[] = " Uxx\n\r";
+							init_msg1[1] = (st >> 4) +'0';
+							init_msg1[2] = (st & 0x0F) +'0';
+							uint16_t len1 = strlen(init_msg1);
+							HAL_UART_Transmit(&hlpuart1, (uint8_t*)init_msg1, len1, 500);
 
-				    }*/
-				    vTaskDelay(5);
+					    }*/
+					    vTaskDelay(5);
+					}
 				}
+				// Si UART non disponible, on ignore silencieusement le message
 
 			} else if (stat == 1) {
 				// ⭐ PAS DE MESSAGE (NORMAL) - Sortir de la boucle

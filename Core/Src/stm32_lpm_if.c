@@ -206,6 +206,11 @@ void EnterStopWithLPTIM(TickType_t  xExpectedIdleTime)
 
     vTaskStepTick( completeTickPeriods );
 
+    // ✅ Synchronisation de la HAL : compenser les ticks perdus pendant le STOP2
+    for (uint32_t i = 0; i < completeTickPeriods; i++) {
+        HAL_IncTick();
+    }
+
     // Redémarrage SysTick
     SysTick->LOAD = (configCPU_CLOCK_HZ / configTICK_RATE_HZ) - 1;
     SysTick->VAL  = 0;
