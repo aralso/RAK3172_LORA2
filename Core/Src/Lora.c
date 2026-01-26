@@ -31,6 +31,8 @@ SF7, 0db => 31ms à 20mA, max 110db
 SF8, 0db => 62ms à 20mA, max 113db
 SF9, 0db => 125ms à 20mA, max 116db
 SF9, 6db => 125ms à 50mA, max 122db
+
+vitesse en SF9 : 100ms(25 car au debut(head)) + 4ms par car,
 */
 double floor (double);
 struct radio_TxParam_s radio_TxParam;
@@ -83,6 +85,8 @@ static volatile bool g_waiting_beacon = false; // Flag pour différencier Timer 
 extern QueueHandle_t Event_QueueHandle;
 extern osThreadId_t Uart_TX_TaskHandle;
 
+QueueHandle_t EventLora_Queue;
+
 void fin_phase_transmission();
 uint8_t analyse_queue_lora(uint8_t id);
 uint8_t mess_lora_cherche(uint8_t node_id, uint8_t cpt, uint16_t* pos );
@@ -91,6 +95,7 @@ void fin_phase_reception(void);
 void test_alarme();
 void relance_radio_rx_isr(uint8_t actif);
 static uint8_t mess_LORA_suppression_milieu_no_lock(uint8_t q_id, uint16_t pos);
+void Lora_Tsk(void *argument);
 
 
 // Configuration réseau
@@ -99,6 +104,61 @@ static uint8_t mess_LORA_suppression_milieu_no_lock(uint8_t q_id, uint16_t pos);
 #endif
 
 TimerHandle_t HTimer_loraTX;
+
+// Definitions for LORA_Task
+osThreadId_t Lora_TaskHandle;
+const osThreadAttr_t Lora_Task_attributes = {
+  .name = "Lora_Task",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 512 * 4
+};
+
+
+
+void init_tache_lora(void)
+{
+	//creation queue lora  - queue de 32 messages reçus
+    EventLora_Queue = xQueueCreate(32, sizeof(event_t));
+
+	/* creation of LORA_Task */
+	Lora_TaskHandle = osThreadNew(Lora_Tsk, NULL, &Lora_Task_attributes);
+
+}
+
+void Lora_Tsk(void *argument)
+{
+    event_t evt;
+    osStatus_t status;
+
+    // Démarrer la surveillance watchdog pour cette tâche
+	watchdog_task_start(WATCHDOG_TASK_LORA);
+	for(;;)
+    {
+        // Enregistrer un heartbeat pour le watchdog
+        watchdog_task_heartbeat(WATCHDOG_TASK_LORA);
+
+        watchdog_set_context(WATCHDOG_TASK_LORA, WATCHDOG_CONTEXT_WAITING);
+
+        // Attendre un événement (bloque tant qu'il n'y a rien)
+        status = osMessageQueueGet(EventLora_Queue, &evt, NULL, osWaitForever);
+
+        watchdog_set_context(WATCHDOG_TASK_LORA, WATCHDOG_CONTEXT_ACTIVE);
+
+        if (status == osOK)
+        {
+        	//event_count++;
+            //LOG_INFO("Événement #%i: type=%d", event_count, evt.type);
+        	switch (evt.type) {
+
+				case EVENT_LORA_TX: {
+					toggle_led(1);
+					//LOG_INFO("Toggle Led1");
+					break;
+				}
+        	}
+        }
+    }
+}
 
 
 static void TimerloraTXCallback(TimerHandle_t xTimer)   // interruption
@@ -269,7 +329,7 @@ void GetRadioRxParam (uint8_t dest)
 {
 	  // 2:bandWidth, 3:SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
     // Message 1 : Fréquence, Channel, DR, Modem, Bandwidth, Datarate
-    envoie_mess_ASC(param_def, "%c RX: BW%lu DR%d CR%d Pr%d SmTO%d",
+    envoie_mess_ASC(param_def, "%c RX: BW%lu SF%i CR%d Pr%d SmTO%d",
                     dest,
                     radio_RxParam.bandwidth, 
                     radio_RxParam.datarate,
@@ -280,7 +340,7 @@ void GetRadioRxParam (uint8_t dest)
 
     // Message 2 : Coderate, AFC, Preamble, SymbTimeout, IQ, Continuous
     HAL_Delay(50);
-    envoie_mess_ASC(param_def, "%c RX: DRt%lu F%lu Ch%d Md%d Afc%lu IQ%d Cont%d",
+    envoie_mess_ASC(param_def, "%c RX: DR%lu F%lu Ch%d Md%d Afc%lu IQ%d Cont%d",
                     dest,
                     radio_RxParam.DR,
                     radio_RxParam.freq,
@@ -294,7 +354,7 @@ void GetRadioRxParam (uint8_t dest)
 void GetRadioTxParam (uint8_t dest)
 {
 	  // 1:power, 2:bandWidth, 3:SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
-    envoie_mess_ASC(param_def, "%c TX: Pw%d SF%lu BW%lu CR%d Pr%d TO%lu ",
+    envoie_mess_ASC(param_def, "%c TX: Pw%d BW%lu SF%i CR%d Pr%d TO%lu ",
                     dest,
                     radio_TxParam.power, 
                     radio_TxParam.bandwidth,
@@ -316,8 +376,9 @@ void GetRadioTxParam (uint8_t dest)
 }
 
 // Implémentation calquée sur SetRadioTxParam pour le RX
-void SetRadioRxParam (uint8_t param, uint8_t val)
+uint8_t SetRadioRxParam (uint8_t param, uint8_t val)
 {
+	uint8_t ret=1;
     /*
         Mapping des params (identique TX pour cohérence si possible, sinon adapté)
         2: Bandwidth
@@ -331,25 +392,26 @@ void SetRadioRxParam (uint8_t param, uint8_t val)
     */
 
     if (param==2)  // Bandwidth
-        radio_RxParam.bandwidth = val; // 0:125k, 1:250k, 2:500k
+        {radio_RxParam.bandwidth = val; ret=0;} // 0:125k, 1:250k, 2:500k
 
     if (param==3)  // Datarate (SF direct)
-        radio_RxParam.datarate = val; // 6..12
+        {radio_RxParam.datarate = val; ret=0;} // 6..12
 
     if (param==4)  // Coderate
-        radio_RxParam.coderate = val; // 1:4/5
+        {radio_RxParam.coderate = val; ret=0;} // 1:4/5
 
     if (param==5)  // Preamble Len
-        radio_RxParam.preambleLen = val;
+        {radio_RxParam.preambleLen = val; ret=0;}
 
     if (param==6)  // Symbol Timeout
-        radio_RxParam.symbTimeout = val;
+        {radio_RxParam.symbTimeout = val; ret=0;}
 
     if (param==7)  // DR global (0..7) -> met à jour SF et BW
     {
         radio_RxParam.DR = val;
         radio_RxParam.datarate = DataratesEU868[val]; // SF
         radio_RxParam.bandwidth  = RegionCommonGetBandwidth( val, BandwidthsEU868 );
+		ret=0;
     }
 
     if (param==8)  // Freq Base (en MHz, ex: 868 -> 868000000)
@@ -357,12 +419,14 @@ void SetRadioRxParam (uint8_t param, uint8_t val)
         radio_RxParam.freq = (val + 860) * 1000000;
         // Met à jour la fréquence physique avec l'offset channel
         Radio.SetChannel(radio_RxParam.freq + radio_RxParam.channel * 100000);
+		ret=0;
     }
 
     if (param==9)  // Channel offset
     {
         radio_RxParam.channel = val;
         Radio.SetChannel(radio_RxParam.freq + radio_RxParam.channel * 100000);
+		ret=0;
     }
 
     // Application de la config RX si paramètre radio (hors freq/channel qui sont appliqués directement)
@@ -383,38 +447,43 @@ void SetRadioRxParam (uint8_t param, uint8_t val)
                           radio_RxParam.iqInverted, 
                           radio_RxParam.rxContinuous);
     }
+    return ret;
 }
 
-void SetRadioTxParam (uint8_t param, uint8_t val)
+uint8_t SetRadioTxParam (uint8_t param, uint8_t val)
 {
+	uint8_t ret=1;
 
 	if (param==1)  // power
-		radio_TxParam.power = val;
+		{radio_TxParam.power = val; ret=0;}
 	if (param==2)  // bandwith
-		radio_TxParam.bandwidth = val;
+		{radio_TxParam.bandwidth = val; ret=0;}
 	if (param==3)  // Spread factor
-		radio_TxParam.SF = val;
+		{radio_TxParam.SF = val; ret=0;}
 	if (param==4)  // coderate
-		radio_TxParam.coderate = val;
+		{radio_TxParam.coderate = val; ret=0;}
 	if (param==5)  // preamble length
-		radio_TxParam.preambleLen = val;
+		{radio_TxParam.preambleLen = val; ret=0;}
 	if (param==6)  // timeout
-		radio_TxParam.timeout = val;
+		{radio_TxParam.timeout = val; ret=0;}
 	if (param==7)  // DR    0 à 7
 	{
 		radio_TxParam.DR = val;
 		radio_TxParam.SF = DataratesEU868[val];
 		radio_TxParam.bandwidth  = RegionCommonGetBandwidth( val, BandwidthsEU868 );
+		ret=0;
 	}
 	if (param==8)  // freq
 	{
 		radio_TxParam.freq = (val+860)*1000000;
 		Radio.SetChannel (radio_TxParam.freq + radio_TxParam.channel*100000);
+		ret=0;
 	}
 	if (param==9)  // channel
 	{
 		radio_TxParam.channel = val;
 		Radio.SetChannel (radio_TxParam.freq + radio_TxParam.channel*100000);
+		ret=0;
 	}
 	if (param < 8)
 	{
@@ -423,7 +492,7 @@ void SetRadioTxParam (uint8_t param, uint8_t val)
 				radio_TxParam.crcOn, radio_TxParam.freqHopOn, radio_TxParam.hopPeriod, radio_TxParam.iqInverted, \
 				radio_TxParam.timeout);
 	}
-
+	return ret;
 }
 
 // pas utilisé
@@ -557,8 +626,8 @@ void configure_radio_parameters(void)
 	radio_TxParam.modem = MODEM_LORA;   // 0:FSK  1:LORA
 	radio_TxParam.power = 0;			// en dBm
 	radio_TxParam.fdev = 0;				// 25000 pour FSK
-	radio_TxParam.bandwidth = 0;		// Bandwidth 0:125k 1:250k 2:500k
-	radio_TxParam.SF = 12;			    // SFDatarate: 6=64chips, 7=128 chips 12=4096chips
+	radio_TxParam.bandwidth = Bandwidths[DR_defaut];		// Bandwidth 0:125k 1:250k 2:500k
+	radio_TxParam.SF = DataratesEU868[DR_defaut];			    // SFDatarate: 6=64chips, 7=128 chips 12=4096chips
 	radio_TxParam.coderate = 1;			// Coderate 1:4/5  2:4/6
 	radio_TxParam.preambleLen = 8;		// En octets (rajouter 4)
 	radio_TxParam.fixLen = 0;			// Fixed length : 0:variable
@@ -569,7 +638,7 @@ void configure_radio_parameters(void)
 	radio_TxParam.timeout = 4000;
 	radio_TxParam.freq = 868000000;
 	radio_TxParam.channel = 1;			// channel de 100kHz
-	radio_TxParam.DR = 0	;			// DR 0(SF12) à DR6(SF7) DR7(FSK)
+	radio_TxParam.DR = DR_defaut	;			// DR 0(SF12) à DR6(SF7) DR7(FSK)
 
 	Radio.SetTxConfig(radio_TxParam.modem, radio_TxParam.power, radio_TxParam.fdev, radio_TxParam.bandwidth, \
 			radio_TxParam.SF, radio_TxParam.coderate, radio_TxParam.preambleLen, radio_TxParam.fixLen,\
@@ -973,6 +1042,13 @@ void lora_tx_state_step(void)
     LOG_INFO("            tx:%i  rx:%i", g_tx_state,  g_rx_state);
 }
 
+void test_getTimeOnAir(uint8_t longueur)
+{
+	TimerTime_t temps;
+	// test de payload de 10 octets
+    temps = GetTimeOnAir(radio_TxParam.DR, longueur);
+    LOG_INFO("Time On Air DR:%i lg:%i Time=%i",radio_TxParam.DR, longueur, temps);
+}
 
 void fin_phase_reception(void)
 {

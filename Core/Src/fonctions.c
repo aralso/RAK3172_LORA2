@@ -34,9 +34,9 @@ static watchdog_task_info_t watchdog_tasks[WATCHDOG_TASK_COUNT];
 
 uint8_t code_erreur, comptage_erreur;
 uint8_t err_donnee1, err_donnee2;
-uint8_t enr_erreur[nb_erreurs_enregistrees];          // Enr_erreur enregistre les 30 premiÃ¨res erreurs
-uint8_t erreurs_unique[nb_erreurs_unique/8];    // 1:erreur dÃ©ja envoyÃ©e, plus d'envoi
-uint8_t erreurs_4_fois[nb_erreurs_4_fois/4];       // Nb d'erreurs dÃ©ja envoyÃ©es, max 4
+uint8_t enr_erreur[nb_erreurs_enregistrees];          // Enr_erreur enregistre les 30 premieres erreurs
+uint8_t erreurs_unique[nb_erreurs_unique/8];    // 1:erreur deja envoyee, plus d'envoi
+uint8_t erreurs_4_fois[nb_erreurs_4_fois/4];       // Nb d'erreurs deja envoyees, max 4
 
 uint8_t nb_reset=0;
 
@@ -54,12 +54,9 @@ extern uint8_t uart_timeout_on;
 extern uint8_t cpt_process_lora_tx;
 
 extern UART_HandleTypeDef hlpuart1;
+
 extern osThreadId_t defaultTaskHandle;
 extern osThreadId_t Appli_TaskHandle;
-extern osThreadId_t LORA_TX_TaskHandle;
-extern osThreadId_t LORA_RX_TaskHandle;
-extern osThreadId_t Uart_RX_TaskHandle;
-extern osThreadId_t Uart_TX_TaskHandle;
 
 
 // Fonctions pour gérer le contexte
@@ -124,14 +121,16 @@ void init_functions2(void)
 
 	// creation timers : maximum 49 jours. minimum 1ms
 		// timer de raz watchdog hard et vérification du watchdog logiciel
-		HTimer_Watchdog = xTimerCreate(
-			"WatchdogTimer",                    // Nom
-			pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
-			pdTRUE,                            // Auto-reload
-			(void*)0,                          // ID
-			WatchdogTimerCallback              // Callback
-		);
-	    if (HTimer_Watchdog != NULL) xTimerStart(HTimer_Watchdog, 0);
+		#ifndef Sans_Watchdog
+			HTimer_Watchdog = xTimerCreate(
+				"WatchdogTimer",                    // Nom
+				pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL), // Période
+				pdTRUE,                            // Auto-reload
+				(void*)0,                          // ID
+				WatchdogTimerCallback              // Callback
+			);
+			if (HTimer_Watchdog != NULL) xTimerStart(HTimer_Watchdog, 0);
+		#endif
 
 		HTimer_24h = xTimerCreate(
 	        "Timer24h",                          // Nom
@@ -298,7 +297,7 @@ uint8_t GetBatteryLevel(void)
 	//LOG_INFO("niveau batt : %i mv", batt_mv);
 	uint16_t batt_mv = SYS_GetBatteryLevel();
 	LOG_INFO("niveau vref : %i mv", batt_mv);
-	// 2600:0  3300:255
+	// 2600:0  3600:255
 	if (batt_mv>2600)
 		return ((uint8_t) ((batt_mv-2600)/4));
 	else
@@ -616,13 +615,9 @@ void check_stack_usage(void)
     stack_high_water_mark = uxTaskGetStackHighWaterMark(Appli_TaskHandle);
     LOG_INFO("Appli_Task: %i free", stack_high_water_mark);
 
-    // LORA_TX_Task
-    stack_high_water_mark = uxTaskGetStackHighWaterMark(LORA_TX_TaskHandle);
-    LOG_INFO("LORA_TX_Task: %i free", stack_high_water_mark);
-
-    // LORA_RX_Task
-    stack_high_water_mark = uxTaskGetStackHighWaterMark(LORA_RX_TaskHandle);
-    LOG_INFO("LORA_RX_Task: %i free", stack_high_water_mark);
+    // LORA_Task
+    stack_high_water_mark = uxTaskGetStackHighWaterMark(Lora_TaskHandle);
+    LOG_INFO("Lora_Task: %i free", stack_high_water_mark);
 
 
     // Uart1_Task
@@ -1540,4 +1535,51 @@ float PIDd_Compute(PID_t *pid, float setpoint, float measurement)
 	pid->last_error = e;
 
     return u;
+}
+
+void raz_erreur(void)
+{
+    uint8_t i1;
+    code_erreur=0;
+    err_donnee1=0;
+    err_donnee2=0;
+    comptage_erreur=0;
+    for (i1=0; i1<(nb_erreurs_unique/8); i1++)   erreurs_unique[i1] = 0;
+    for (i1=0; i1<(nb_erreurs_4_fois/4); i1++)   erreurs_4_fois[i1] = 0;
+    nb_reset = 0;
+	EEPROM_Write32(0, (uint32_t)nb_reset);
+
+}
+
+void lecture_erreurs(uint8_t dest)
+{
+    if (comptage_erreur > nb_erreurs_enregistrees)
+    {
+        comptage_erreur = nb_erreurs_enregistrees;
+    }
+	char messa[MESS_LG_MAX];
+	messa[0] = dest;
+    messa[1] = 'E'; // => LEL reset;nb erreurs-num erreur-donnï¿½e1;donnï¿½e2
+    messa[2] = 'L';
+    messa[3] = nb_reset + '0';
+    messa[4] = comptage_erreur + '0';
+    messa[5] = ':';
+    uint8_t a = 6;
+    for (uint8_t b = 0;
+        ((b < comptage_erreur)
+            && (a < (MESS_LG_MAX - 6))); b++)
+      {
+        messa[a++] = deci (enr_erreur[b] >> 4);
+        messa[a++] = deci (enr_erreur[b] & 15);
+        messa[a++] = '-';
+      }
+    a--;
+    messa[a] = 0;
+    envoie_mess_ASC(param_def, (const char*)messa);
+
+    raz_erreur ();
+
+    /*uint32_t uptime_ms = HAL_GetTick();
+    LOG_INFO("System uptime: %lu ms", uptime_ms);*/
+
 }

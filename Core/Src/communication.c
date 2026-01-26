@@ -56,8 +56,9 @@ uint32_t ReadVBAT(void);
 
 	Radio :
 	RLSI : niveau rssi recu du node 0
-	RESl : passage raido en sleep
+	RESl : passage radio en sleep
 	RERXxy Ecriture param Radio TX paramx = y  P
+	RLR/RLT : lecture parametres radio en RX et TX
 
 	Valeurs Lect/Ecrit
 	VEPa : Param_def
@@ -1423,7 +1424,7 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					#if CODE_TYPE == 'B'
 						temp_period = per_tmp;
 						envoie_mess_ASC(param_def, "%cPeriod Temp=%i", message_in[1], temp_period);
-						EEPROM_Write16(0, temp_period);
+						EEPROM_Write16(1, temp_period);
 						if (temp_period)
 							xTimerChangePeriod( HTimer_temp_period, pdMS_TO_TICKS(temp_period*1000), 0 );
 						else
@@ -1568,12 +1569,16 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               if ( (message_in[4] =='T') && (message_in[5] =='X') && (longueur_m==8))  // RETXxy Radio TX paramx = y
               {
             	  // 1:power, 2:bandWidth, 3:SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
-            	  SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+            	  uint8_t ret = SetRadioTxParam(message_in[6]-'0', message_in[7]-'0');
+            	  if (!ret)
+            		  envoie_mess_ASC(param_def, "%cTX param:%i val:%i", message_in[1], message_in[6]-'0', message_in[7]-'0');
               }
               if ( (message_in[4] =='R') && (message_in[5] =='X') && (longueur_m==8))  // RERXxy Radio RX paramx = y
               {
             	  // 2:bandWidth, 3:DataRate-SF, 4:coderate, 5:preamble lgt, 6:timeout, 7:DR, 8:freq, 9:channel
-            	  SetRadioRxParam(message_in[6]-'0', message_in[7]-'0');
+            	  uint8_t ret = SetRadioRxParam(message_in[6]-'0', message_in[7]-'0');
+            	  if (!ret)
+            		  envoie_mess_ASC(param_def, "%cRX param:%i val:%i", message_in[1], message_in[6]-'0', message_in[7]-'0');
               }
           }
 
@@ -1581,7 +1586,18 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 
           if ((message_in[2] == 'S') && (message_in[3] == 'L'))   // SL : Lecture Statut
           {
-              if ( (message_in[4] =='O')  && (longueur_m==5))  // 1SLO
+              if ( (message_in[4] =='E')  && (longueur_m==5))  // SLE Lecture erreurs
+              {
+            	  lecture_erreurs(message_in[1]);
+              }
+		      if ( (message_in[4] =='L')  && (longueur_m==9))  // LEcture Log SLLxxyy
+		      {
+		    	  uint8_t debut = (message_in[5]-'0')*10+ message_in[6]-'0';
+		    	  uint8_t nbre = (message_in[7]-'0')*10+ message_in[8]-'0';
+			     uint16_t logs_read = log_read(debut, nbre,  '1', 0);
+			     LOG_INFO("Logs lus: %i", logs_read);
+		      }
+              if ( (message_in[4] =='O')  && (longueur_m==5))  // SLO
               {
             	  uint8_t node_id = Node_id(message_in[1]);
             	  if (node_id) node_id--;
@@ -1676,11 +1692,11 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		      {
 		    	  Error_Handler(14);
 		      }
-		      if ( (message_in[4] =='L')  && (longueur_m==7))  // LEcture Log 1TLL01
+		      if ( (message_in[4] =='4'))  // TL4xx Time On Air
 		      {
-			     uint16_t logs_read = log_read(message_in[5]-'0', message_in[6]-'0', '1', 0);
-			     LOG_INFO("Logs lus: %i", logs_read);
+			      test_getTimeOnAir((message_in[5]-'0')*10  + message_in[6]-'0');
 		      }
+
               if ((message_in[4] == 'T') && (longueur_m==5))  // TLT => print test_tab
               {
             	  LOG_INFO("index:%i  val2:%i", test_index, test_var);
@@ -1689,6 +1705,36 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
             		  LOG_INFO("ind:%i val:%u", i, test_tab[i]);
             	  }
               }
+			  if ( (message_in[4] =='E')  && (longueur_m==7))  // TLEAx Lecture eeprom
+			  {
+				  if (message_in[5]=='A')
+				  {
+					uint8_t value;
+					if (EEPROM_Read8(message_in[6]-'0', &value) == HAL_OK) {
+						LOG_INFO("EEPROM lu 8bit: adresse %d = 0x%02X", message_in[6]-'0', value);
+					} else {
+						LOG_ERROR("Erreur lecture EEPROM ");
+					}
+				  }
+				  if (message_in[5]=='B')
+				  {
+					uint16_t value;
+					if (EEPROM_Read16(message_in[6]-'0', &value) == HAL_OK) {
+						LOG_INFO("EEPROM lu 16bit: adresse %d = 0x%04X", message_in[6]-'0', value);
+					} else {
+						LOG_ERROR("Erreur lecture EEPROM ");
+					}
+				  }
+				  if (message_in[5]=='C')
+				  {
+					uint32_t value;
+					if (EEPROM_Read32(message_in[6]-'0', &value) == HAL_OK) {
+						LOG_INFO("EEPROM lu 32bit: adresse %d = 0x%08X", message_in[6]-'0', value);
+					} else {
+						LOG_ERROR("Erreur lecture EEPROM ");
+					}
+				  }
+			  }
               if ((message_in[3] == 'R') && (longueur_m==5))  // 1TR1 => envoi test radio
               {
             	  test_var=1;
@@ -1730,13 +1776,32 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 					  envoie_mess_ASC(param_def, "%cTES%i", dest, i);
 				  }
 			  }
-			  if ( (message_in[4] =='E')  && (longueur_m==7))  // Ecriture eeprom  1TEE12
+			  if ( (message_in[4] =='E')  && (longueur_m==8))  // Ecriture eeprom  TEEAxx TEEBxx TEECxx
 			  {
-			     if (EEPROM_Write8(message_in[5]-'0', message_in[6]-'0') == HAL_OK) {
-				    LOG_INFO("EEPROM écrit");
-			     } else {
-				    LOG_ERROR("Erreur écriture EEPROM ");
-			     }
+				  if (message_in[5] == 'A')
+				  {
+					 if (EEPROM_Write8(message_in[6]-'0', message_in[7]-'0') == HAL_OK) {
+						LOG_INFO("EEPROM écrit 8bit ind:%i val:%i", message_in[6]-'0', message_in[7]-'0');
+					 } else {
+						LOG_ERROR("Erreur écriture EEPROM ");
+					 }
+				  }
+				  if (message_in[5] == 'B')
+				  {
+					 if (EEPROM_Write16(message_in[6]-'0', message_in[7]-'0') == HAL_OK) {
+						LOG_INFO("EEPROM écrit 16bit ind:%i val:%i", message_in[6]-'0', message_in[7]-'0');
+					 } else {
+						LOG_ERROR("Erreur écriture EEPROM ");
+					 }
+				  }
+				  if (message_in[5] == 'C')
+				  {
+					 if (EEPROM_Write32(message_in[6]-'0', message_in[7]-'0') == HAL_OK) {
+						LOG_INFO("EEPROM écrit 32bit ind:%i val:%i", message_in[6]-'0', message_in[7]-'0');
+					 } else {
+						LOG_ERROR("Erreur écriture EEPROM ");
+					 }
+				  }
 			  }
 			  if ( (message_in[4] =='L')  && (longueur_m==7))  // Ecriture LOG  1TEL12
 			  {
@@ -1752,15 +1817,6 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 			  if ( (message_in[4] =='Q')  && (longueur_m==5))  // TEQ : envoi vers port serie
 			  {
                   envoie_mess_ASC(param_def, "1AAA");
-			  }
-			  if ( (message_in[4] =='R')  && (longueur_m==6))  // TERx Lecture eeprom
-			  {
-				uint8_t value;
-				if (EEPROM_Read8(message_in[5]-'0', &value) == HAL_OK) {
-					LOG_INFO("EEPROM lu: adresse %d = 0x%02X", message_in[5]-'0', value);
-				} else {
-					LOG_ERROR("Erreur lecture EEPROM ");
-				}
 			  }
 			  if ( (message_in[4] =='S')  && (longueur_m==5))  // TES : envoi par lora vers concen
 			  {

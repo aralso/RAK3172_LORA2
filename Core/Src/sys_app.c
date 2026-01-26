@@ -148,7 +148,7 @@ void HAL_Delay(__IO uint32_t Delay)
 	  }
 
   /* USER CODE END HAL_Delay_1 */
-  TIMER_IF_DelayMs(Delay);
+  //TIMER_IF_DelayMs(Delay);
   /* USER CODE BEGIN HAL_Delay_2 */
 
   /* USER CODE END HAL_Delay_2 */

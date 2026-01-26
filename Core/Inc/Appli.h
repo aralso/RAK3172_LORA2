@@ -12,6 +12,8 @@
 
 //#define MODE_DEBUG  // permet de ne pas fermer la vanne 3 minutes à l'init
 
+//#define Sans_Watchdog
+
 #ifdef MODE_DEBUG
 	#define SANS_RADIO
 	#define Sans_Watchdog
@@ -111,6 +113,12 @@
 
 #endif
 
+/* EEPROM : les adresses 8bits et 32 bits pointent au meme endroit
+0 : 32 bits - status Octet0:Nb_reset
+1 : 16 bits - periode temperature
+2 : 32 bits - Arret : bit 31  forcage_duree: 8à30 bits forcage_consigne:0à7
+3-4-5 : 32 bits - programme chaudiere
+	*/
 
 extern uint8_t test_val;
 extern RTC_HandleTypeDef hrtc;

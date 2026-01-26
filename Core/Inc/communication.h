@@ -39,7 +39,7 @@
 
 
 // Niveau de verbosité global (modifiable)
-#define CURRENT_LOG_LEVEL  LOG_LEVEL_DEBUG
+#define CURRENT_LOG_LEVEL  LOG_LEVEL_INFO
 #define WRITE_LOG_LEVEL	 LOG_LEVEL_WARNING
 
 
@@ -140,6 +140,7 @@ extern uint8_t param_def;
 extern out_message_t message;
 
 extern osThreadId_t Uart_TX_TaskHandle;
+extern osThreadId_t Uart_RX_TaskHandle;
 extern UART_HandleTypeDef hlpuart1;
 extern SUBGHZ_HandleTypeDef hsubghz;
 extern HAL_StatusTypeDef send_lora_message(const char* message, uint8_t message_length, uint8_t dest);

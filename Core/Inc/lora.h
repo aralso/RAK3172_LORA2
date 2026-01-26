@@ -134,6 +134,7 @@ extern uint8_t att_cad;
 extern uint8_t g_tx_class, g_tx_dest;
 extern uint8_t nb_nodes;
 extern nodes_t nodes[];
+extern osThreadId_t Lora_TaskHandle;
 
 // API de contrôle haute-niveau
 void lora_radio_init(void);
@@ -160,9 +161,12 @@ uint8_t mess_lora_cherche_size(uint8_t node_id, uint8_t cpt, uint16_t* pos, uint
 void info_Node(uint8_t id, uint8_t cpt);
 uint8_t mess_LORA_suppression(uint8_t node, uint8_t* nb_mess_supp);
 void lora_timer_tx(void);
-void SetRadioRxParam (uint8_t param, uint8_t val);
+uint8_t SetRadioRxParam (uint8_t param, uint8_t val);
+uint8_t SetRadioTxParam (uint8_t param, uint8_t val);
 void GetRadioTxParam (uint8_t emet);
 void GetRadioRxParam (uint8_t emet);
+void test_getTimeOnAir(uint8_t longueur);
+void init_tache_lora(void);
 
 
 // Callbacks Radio → LoRa layer
@@ -202,6 +206,22 @@ typedef struct
         uint8_t payload[MESS_LG_MAX];       //!< Payload
 } lora_TxPacket;
 
+/*typedef enum  {
+    EVENT_LORA_TX,
+	EVENT_LORA_TX_DONE,
+	EVENT_TIMER_LORA_TX,
+	EVENT_LORA_RX,
+	EVENT_LORA_REVEIL_BALISE,
+	EVENT_RELANCE_RX,
+    EVENT_ERROR,
+    EVENT_LORA_TX_STEP,
+	EVENT_LORA_IDLE,
+    EVENT_LORA_ACK_TIMEOUT,
+	EVENT_LORA_RX_TIMEOUT,
+	EVENT_LORA_RX_TEST,
+	EVENT_LORA_RAW_RX
+} EventLora_t;*/
+
 void subghz_enter_sleep_mode(void);
 void subghz_wake_up(void);
 void configure_radio_parameters(void);
@@ -216,7 +236,6 @@ void check_radio_hardware_configuration(void);
 void try_radio_wakeup_all_commands(void);
 void diagnose_radio_deep_sleep(void);
 void test_radio_write_register(void);
-void SetRadioTxParam (uint8_t param, uint8_t val);
 void PrintRadioTxParam(void);
 
 // Comptage LPTIM1 et calculs balise

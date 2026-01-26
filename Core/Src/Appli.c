@@ -15,16 +15,15 @@
  planning chaudiere
 
  améliorer/verifier :
- consommation veille, avec oscillo
- lptim2 ou RTC pour radio
- config de lptim1 pour freertos
- envoie log
- lecture erreurs
- verif HAL_delay et osDelay
- verif demarrage sans uart
- verif get_battery_level
- verif GetTimeOnAir()
+ Mat-verif HAL_delay et osDelay : HAL_Delay 2 fois trop long
+ Mat-IA: rajout  ticks de lptim1
+ Mat-verif demarrage sans uart  __HAL_UART_GET_FLAG
+ Osc-consommation veille, avec oscillo
+ IA-lptim2 ou RTC pour radio
+ IA-config de lptim1 pour freertos
+ IA-Mat-envoie log
 
+ v1.13 01/2026 : HAL_Delay corrigé, SLE-lecture erreurs, nb_reset
  v1.12 12/2025 : modif timers : LPTIM1 pour freertos, RTC pour Radio, valid comm lora
  v1.11 12/2025 : modif STOP2 freertos par timer LPTIM1
  v1.10 11/2025 : divers bugs lora, vrefInt
@@ -55,6 +54,11 @@ Autres :
 	reveil watchdog 20s    : 0,25uA (1ms à 5mA chaque 20s)
 	Envoi temp 20min       : 6uA (0,5s à 15mA chaque 20 min)
 
+Délais :
+	HAL_Delay : boucle basée sur HAL_GetTick() avec TIM16
+	osDelay : freertos basé sur LPTIM1
+	TIMER_IF_DelayMs : boucle basée sur GetTimerTicks() avec RTC
+
 Conso en MSI_range8 et HSI : 1,33mA
 */
 
@@ -81,8 +85,6 @@ extern TimerHandle_t HTimer_24h;
 extern TimerHandle_t HTimer_20min;
 extern TimerHandle_t HTimer_M3voies;
 
-extern osThreadId_t Uart_RX_TaskHandle;
-extern osThreadId_t Uart_TX_TaskHandle;
 
 extern uint8_t uart_rx_char;
 extern osThreadId_t defaultTaskHandle;
@@ -141,24 +143,6 @@ uint8_t Keepalive=1;
 #endif
 
 
-/* Definitions for LORA_RX_Task */
-osThreadId_t LORA_RX_TaskHandle;
-const osThreadAttr_t LORA_RX_Task_attributes = {
-  .name = "LORA_RX_Task",
-  .priority = (osPriority_t) osPriorityLow,
-  .stack_size = 256 * 4
-};
-/* Definitions for LORA_TX_Task */
-osThreadId_t LORA_TX_TaskHandle;
-const osThreadAttr_t LORA_TX_Task_attributes = {
-  .name = "LORA_TX_Task",
-  .priority = (osPriority_t) osPriorityLow4,
-  .stack_size = 256 * 4
-};
-
-
-void LORA_RXTsk(void *argument);
-void LORA_TXTsk(void *argument);
 void envoi_data (uint8_t nb_valeur);
 void calcul_pid_vanne(void);
 void chgt_consigne(void);
@@ -167,9 +151,35 @@ void lecture_temp_i2c(uint8_t);
 
 void init1()  // avant KernelInitialize
 {
+		/*for (uint8_t i=0; i<10; i++)
+		{
+			HAL_Delay(500);
+		    toggle_led(1);
+		}
+		HAL_Delay(2000);
+		for (uint8_t i=0; i<10; i++)
+		{
+		    uint32_t timeout = HAL_GetTick() + 500; // 100ms max
+			for(;;) {
+				if (HAL_GetTick() > timeout) break;
+			}
+			toggle_led(1);
+		}
+		HAL_Delay(2000);*/
 
+		__disable_irq();
+		volatile uint32_t security_counter = 0;
+		while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET) {
+		    security_counter++;
+		    if (security_counter > 3) { // Si on boucle trop, on sort de force
+	            HAL_UART_DeInit(&hlpuart1);
+		        uart_available = false;
+		        break;
+		    }
+		}
+		__enable_irq();
 
-	    uint32_t timeout = HAL_GetTick() + 100; // 100ms max
+	 /*   uint32_t timeout = HAL_GetTick() + 100; // 100ms max
 	    while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET) {
 	        if (HAL_GetTick() > timeout) {
 	            // UART non connecté ou bloqué -> on désactive
@@ -177,18 +187,19 @@ void init1()  // avant KernelInitialize
 	            uart_available = false;
 	            break; // ✅ Sortir de la boucle MAIS continuer init1()
 	        }
-	    }
+	    }*/
 
-	    toggle_led(1);
+	    /*toggle_led(1);
 
 	    timeout = HAL_GetTick() + 100; // 100ms
 		for(;;) {
 	        if (HAL_GetTick() > timeout) break;
-	    }
+	    }*/
+
 
       if (uart_available) {
 
-		  char init_msg[] = "-- RAK3172 Init. Log level:x\r";
+		  char init_msg[] = "-- RAK3172 Init. Log level:x \r";
 		  init_msg[0] = dest_log;
 		  init_msg[1] = My_Address;
 		  init_msg[27] = get_log_level()+'0';
@@ -201,10 +212,10 @@ void init1()  // avant KernelInitialize
 
       toggle_led(1);
 
-	    timeout = HAL_GetTick() + 100; // 100ms
+	   /* timeout = HAL_GetTick() + 100; // 100ms
 		for(;;) {
 	        if (HAL_GetTick() > timeout) break;
-	    }
+	    }*/
 
       init_functions1();
 
@@ -234,8 +245,9 @@ void init2()  // création queue, timer, semaphore
 	    HAL_UART_Transmit(&hlpuart1, (uint8_t*)msgL, strlen(msgL), 3000);
 	    //HAL_Delay(500);*/
 
-	 init_functions2();  // timer freertos
+	 init_functions2();  // timers freertos
 	 init_communication(); // tache uart
+	 init_tache_lora();  // tache lora
 
 
 }
@@ -288,7 +300,17 @@ void init4(void)
 {
 
     init_functions4();  // watchdog, Log_flash, eeprom
-    log_write('R', 0, 0x00, 0x00, "Init");
+
+    // Ecriture du nb de reset en EEPROM
+	  uint32_t val;
+	  uint8_t res =	EEPROM_Read32(0, &val);
+	  if (!res) {
+		  nb_reset = (uint8_t) (val & 0xFF);
+		  nb_reset++;
+		  EEPROM_Write32(0, (uint32_t)nb_reset);
+	  }
+
+    log_write('R', nb_reset, 0x00, 0x00, "Init");
 
     if (uart_available) {
   	  HAL_UART_Receive_IT(&hlpuart1, &uart_rx_char, 1);  // Demarrage réception Uart1
@@ -301,13 +323,13 @@ void init4(void)
     // lecture parametres en EEPROM
     // periode de lecture de temperature
 	#if CODE_TYPE == 'B'
-		uint8_t status = EEPROM_Read16(0, &temp_period);  // 0 ou 30 à 15000
+		uint8_t status = EEPROM_Read16(1, &temp_period);  // 0 ou 30 à 15000
 		if ((status==0) && ((temp_period ==0) || (temp_period < 15001)))
 			 LOG_INFO("periode temp: %isec", temp_period);
 		else
 		{
 			temp_period = TEMP_PERIOD;
-			EEPROM_Write16(0, temp_period);
+			EEPROM_Write16(1, temp_period);
 			LOG_INFO("Raz periode temp: val par defaut %is", temp_period);
 		}
 		if (temp_period)
@@ -336,7 +358,7 @@ void init4(void)
 	uint8_t err;
 	// Forcage et arret chauffage :  Arret : bit 31  forcage_duree: 8à30 bits forcage_consigne:0à7
 	uint32_t val32;
-	err = EEPROM_Read32( 1 , &val32 );
+	err = EEPROM_Read32( 2 , &val32 );
 	if (!err)
 	{
 		ch_arret = val32>>31;
@@ -352,14 +374,14 @@ void init4(void)
 		ch_arret = 1;
 		forcage_duree = 0;
 		forcage_consigne = 180;
-		EEPROM_Write32(1, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
+		EEPROM_Write32(2, (ch_arret<<31) | (forcage_duree<<8) | (forcage_consigne));
 		LOG_INFO("Raz Init forcage");
 	}
 
 	// Lecture programmes 26-31:cons_ap 24-25:type 16-23:cons 8-15:fin 0-7:debut
 	for (uint8_t i=0; i<NB_MAX_PGM; i++)
 	{
-		err = EEPROM_Read32( 2+i , &val32 );
+		err = EEPROM_Read32( 3+i , &val32 );
 		if (!err)
 		{
 			ch_debut[i] = val32 & 0xFF;
@@ -392,7 +414,7 @@ void init4(void)
 				ch_cons_apres[i] = 16*2;
 				ch_type[i] = 0;
 			}
-			EEPROM_Write32(2+i, (ch_cons_apres[i]<<26) | (ch_type[i]<<24) | (ch_consigne[i]<<16) | (ch_fin[i]<<8) | ch_debut[i]);
+			EEPROM_Write32(3+i, (ch_cons_apres[i]<<26) | (ch_type[i]<<24) | (ch_consigne[i]<<16) | (ch_fin[i]<<8) | ch_debut[i]);
 			LOG_INFO("Raz Programme %i", i);
 		}
 	}
@@ -800,13 +822,13 @@ void startDefTsk()
     uint32_t current_time = HAL_GetTick();
 
     // Afficher le statut du watchdog toutes les 30 secondes
-    if (current_time - last_status_time > 10000) {
+    if (current_time - last_status_time > 10000)
+    {
         //watchdog_print_status();
         last_status_time = current_time;
         //osDelay(3000); // Attendre 3 seconde
 		//check_stack_usage();
 
-        uint8_t value;
         if (test_val ==1)
         	LOG_INFO("toto");
         if (test_val == 2)
@@ -825,21 +847,7 @@ void startDefTsk()
         	uint8_t messa = 'c';
             envoie_mess_ASC(param_def, "1te%cVAnal %i", messa, 12);
         }
-        if (test_val == 5)
-        	EEPROM_Read8(1, &value);
-        if (test_val == 6)
-        	EEPROM_Write8(1, 12);
-        if (test_val == 7)
-        	EEPROM_Read8(1, &value);
-        if (test_val == 8)
-        	log_read(1, 1, '1', 0);
-        if (test_val ==9)
-        	log_write('T', 1, 0x02, 0x03, "testRxBl");    }
-		if (test_val ==10)
-			log_read(1, 4, '1', 0);
-   	    if (test_val ==11)
-		    log_read(1, 1, '1', 1);
-
+    }
     // Sauvegarder les données de diagnostic toutes les 60 secondes
     if (current_time - last_save_time > 30000) {
         //save_diagnostic_data();
@@ -855,130 +863,7 @@ void startDefTsk()
     osDelay(10); // Attendre 1 seconde entre chaque heartbeat
 }
 
-void LORA_RXTsk(void *argument)
-{
-  /* USER CODE BEGIN LORA_RXTsk */
-  // Démarrer la surveillance watchdog pour cette tâche
-  watchdog_task_start(WATCHDOG_TASK_LORA_RX);
-  //LOG_INFO("LoRa RX Task started with watchdog protection");
 
-  /* Infinite loop */
-//	uint8_t rx_buffer[64];
-
-    osDelay(100);
-
-	for(;;)
-	{
-		// Enregistrer un heartbeat pour le watchdog
-		watchdog_task_heartbeat(WATCHDOG_TASK_LORA_RX);
-
-		// Vérifier l'état du radio
-		/*if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
-
-			// Vérifier si un message est disponible
-			if (radio_status & 0x02) { // Bit RX_DONE
-				LOG_DEBUG("LoRa message received");
-
-				// Lire le message depuis le buffer radio
-				if (HAL_SUBGHZ_ReadBuffer(&hsubghz, 0x00, rx_buffer, 64) == HAL_OK) {
-					LOG_INFO("Received LoRa message: %s", rx_buffer);
-		            send_event(EVENT_LORA_RX, SOURCE_LORA, strlen((char*)rx_buffer));
-				} else {
-					LOG_ERROR("Failed to read LoRa buffer");
-				}
-
-				// Effacer le flag RX_DONE
-				HAL_SUBGHZ_WriteRegister(&hsubghz, 0x01, 0x02);
-			} else {
-				LOG_VERBOSE("No LoRa message");
-			}
-		} else {
-			LOG_WARNING("Failed to read radio status");
-		}*/
-
-		osDelay(1000);
-	}
-  /* USER CODE END LORA_RXTsk */
-}
-
-/* USER CODE BEGIN Header_LORA_TXTsk */
-/**
-* @brief Function implementing the LORA_TX_Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_LORA_TXTsk */
-void LORA_TXTsk(void *argument)
-{
-  /* USER CODE BEGIN LORA_TXTsk */
-  // Démarrer la surveillance watchdog pour cette tâche
-  watchdog_task_start(WATCHDOG_TASK_LORA_TX);
-  //LOG_INFO("LoRa TX Task started with watchdog protection");
-
-  /* Infinite loop */
-
-  //uint32_t message_count = 0;
-  //uint8_t tx_buffer[64];
-  //uint8_t radio_status;
-
-  osDelay(100);
-
-  for(;;)
-  {
-	  // Enregistrer un heartbeat pour le watchdog
-	  watchdog_task_heartbeat(WATCHDOG_TASK_LORA_TX);
-
-	  // Attendre un délai
-	  osDelay(12000);
-	  //LOG_INFO("a");
-
-	  // Créer un message avec timestamp
-	  //uint32_t timestamp = HAL_GetTick() / 1000; // secondes
-	  //sprintf((char *)tx_buffer, "LoRa message #%lu at %lu s", message_count++, timestamp);
-
-       //LOG_DEBUG("Sending LoRa message: %s", tx_buffer);
-
-       // Vérifier que le radio est libre
-       /*if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
-           if (!(radio_status & 0x01)) { // Pas en transmission
-
-               // Écrire le message dans le buffer radio
-               if (HAL_SUBGHZ_WriteBuffer(&hsubghz, 0x00, tx_buffer, strlen((char*)tx_buffer)) == HAL_OK) {
-
-                   // Démarrer la transmission
-                   uint8_t tx_cmd = 0x83; // Commande TX
-                   if (HAL_SUBGHZ_ExecSetCmd(&hsubghz, tx_cmd, NULL, 0) == HAL_OK)
-                   {
-                       LOG_INFO("LoRa transmission started");
-
-                       // Attendre la fin de transmission
-                       osDelay(100);
-
-                       // Vérifier le statut
-                       if (HAL_SUBGHZ_ReadRegister(&hsubghz, 0x01, &radio_status) == HAL_OK) {
-                           if (radio_status & 0x08) { // TX_DONE
-                               LOG_INFO("LoRa message sent successfully");
-                               send_event(EVENT_LORA_TX, SOURCE_LORA, message_count);
-                           } else {
-                               LOG_ERROR("LoRa transmission failed");
-                               send_event(EVENT_ERROR, SOURCE_LORA, 1);
-                           }
-                       }
-                   } else {
-                       LOG_ERROR("Failed to start LoRa transmission");
-                   }
-               } else {
-                   LOG_ERROR("Failed to write LoRa buffer");
-               }
-           } else {
-               LOG_WARNING("LoRa radio busy");
-           }
-       } else {
-           LOG_ERROR("Failed to read radio status");
-       }*/
-  }
-  /* USER CODE END LORA_TXTsk */
-}
 
 /* USER CODE BEGIN Header_Appli_Tsk */
 /**
@@ -1004,11 +889,93 @@ void Appli_Tsk(void *argument)
   	   //HAL_UART_Transmit(&hlpuart1, (uint8_t*)"InitA", 5, 3000);
   	   //HAL_Delay(500);
 	watchdog_task_start(WATCHDOG_TASK_APPLI);
+
     //LOG_INFO("Appli_Task started with watchdog protection");
 	//uint16_t event_count;
 
-	osDelay(2000);
+	osDelay(300);
 	LOG_INFO("debut1");
+
+	/*for (uint8_t i=0; i<10; i++)
+	{
+		HAL_Delay(500);
+	    toggle_led(1);
+	}
+	HAL_Delay(2000);
+	for (uint8_t i=0; i<10; i++)
+	{
+	    uint32_t timeout = HAL_GetTick() + 500; // 100ms max
+		for(;;) {
+			if (HAL_GetTick() > timeout) break;
+		}
+		toggle_led(1);
+	}
+
+	osDelay(2000);
+	LOG_INFO("debut2");*/
+	/*for (uint8_t i=0; i<10; i++)
+	{
+		osDelay(500);
+	    toggle_led(1);
+	}*/
+
+	// 1. Capturer l'état initial
+	uint32_t hal_before = HAL_GetTick();
+	uint32_t os_before = xTaskGetTickCount();
+	LOG_INFO("--- TEST TEMPS ---");
+	LOG_INFO("Avant osDelay(2000) - HAL: %u, OS: %u", hal_before, os_before);
+	// 2. Lancer le délai (le CPU va entrer en STOP2 ici)
+	osDelay(2000);
+	// 3. Capturer l'état final
+	uint32_t hal_after = HAL_GetTick();
+	uint32_t os_after = xTaskGetTickCount();
+	// 4. Calculer les deltas
+	uint32_t delta_hal = hal_after - hal_before;
+	uint32_t delta_os = os_after - os_before;
+	LOG_INFO("Après osDelay(2000) - HAL: %u, OS: %u", hal_after, os_after);
+	LOG_INFO("Deltas mesurés - HAL: %u, OS: %u", delta_hal, delta_os);
+
+	osDelay(2000);
+
+	// 1. Capturer l'état initial
+	hal_before = HAL_GetTick();
+	os_before = xTaskGetTickCount();
+	LOG_INFO("--- TEST TEMPS 2 ---");
+	LOG_INFO("Avant osDelay(100) - HAL: %u, OS: %u", hal_before, os_before);
+	// 2. Lancer le délai (le CPU va entrer en STOP2 ici)
+	osDelay(100);
+	// 3. Capturer l'état final
+	hal_after = HAL_GetTick();
+	os_after = xTaskGetTickCount();
+	// 4. Calculer les deltas
+	delta_hal = hal_after - hal_before;
+	delta_os = os_after - os_before;
+	LOG_INFO("Après osDelay(100) - HAL: %u, OS: %u", hal_after, os_after);
+	LOG_INFO("Deltas mesurés - HAL: %u, OS: %u", delta_hal, delta_os);
+
+	osDelay(2000);
+
+	// 1. Capturer l'état initial
+	hal_before = HAL_GetTick();
+	os_before = xTaskGetTickCount();
+	LOG_INFO("--- TEST TEMPS 3 ---");
+	LOG_INFO("Avant osDelay(30s) - HAL: %u, OS: %u", hal_before, os_before);
+	// 2. Lancer le délai (le CPU va entrer en STOP2 ici)
+	HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
+	osDelay(30000);
+	HAL_IWDG_Refresh(&hiwdg);  // refresh watchdog hardware
+
+	// 3. Capturer l'état final
+	hal_after = HAL_GetTick();
+	os_after = xTaskGetTickCount();
+	// 4. Calculer les deltas
+	delta_hal = hal_after - hal_before;
+	delta_os = os_after - os_before;
+	LOG_INFO("Après osDelay(30s) - HAL: %u, OS: %u", hal_after, os_after);
+	LOG_INFO("Deltas mesurés - HAL: %u, OS: %u", delta_hal, delta_os);
+
+	osDelay(2000);
+	LOG_INFO("debut3");
 
 	for(;;)
     {

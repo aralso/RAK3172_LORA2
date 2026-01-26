@@ -76,8 +76,7 @@ typedef enum  {
 // Identifiants des tâches pour le watchdog
 typedef enum {
     WATCHDOG_TASK_DEFAULT = 0,
-    WATCHDOG_TASK_LORA_RX,
-    WATCHDOG_TASK_LORA_TX,
+    WATCHDOG_TASK_LORA,
     WATCHDOG_TASK_APPLI,
     WATCHDOG_TASK_UART_RX,
     WATCHDOG_TASK_UART_TX,
@@ -138,6 +137,7 @@ extern QueueHandle_t Event_QueueHandle;
 extern uint8_t batt_avant; // mesure batterie avant transmission LORA
 extern uint8_t batt_apres; // mesure batterie apres transmission LORA
 extern uint8_t mesure_batt_ok;
+extern uint8_t nb_reset;
 
 extern TimerHandle_t HTimer_temp_period;
 
@@ -172,6 +172,8 @@ uint16_t decod_dec16 (uint8_t* index);
 void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max);
 float PIDd_Compute(PID_t *pid, float setpoint, float measurement);
 void toggle_led(uint8_t num);
+void lecture_erreurs(uint8_t dest);
+void raz_erreur(void);
 
 uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);
