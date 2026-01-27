@@ -109,7 +109,7 @@ TimerHandle_t HTimer_loraTX;
 osThreadId_t Lora_TaskHandle;
 const osThreadAttr_t Lora_Task_attributes = {
   .name = "Lora_Task",
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal1,
   .stack_size = 512 * 4
 };
 
@@ -151,8 +151,86 @@ void Lora_Tsk(void *argument)
         	switch (evt.type) {
 
 				case EVENT_LORA_TX: {
-					toggle_led(1);
-					//LOG_INFO("Toggle Led1");
+					LOG_INFO("Debut de transmission LORA");
+					lora_handle_event_tx(evt.source);
+					break;
+				}
+				case EVENT_LORA_TX_STEP: {
+					LOG_INFO("TX_step ");
+					lora_tx_state_step();
+					break;
+				}
+				case EVENT_TIMER_LORA_TX: {   // fin du timer tx_rx
+					LOG_INFO("Timer lora tx");
+					lora_timer_tx();
+					break;
+				}
+
+				case EVENT_LORA_RX_TIMEOUT: { // timeout du RX
+					LOG_INFO("Timeout LORA RX  g_rx:%i ", evt.source);
+					relance_radio_rx(0);
+					break;
+				}
+
+				case EVENT_LORA_IDLE: {  // Remise Radio en Sleep ou RX (apres délai RX)
+					relance_radio_rx(0);  // RX ou sleep
+					break;
+				}
+
+				case EVENT_LORA_RX: {
+					LOG_INFO("message LORA recu len:%i rssi:%i snr:%i param:%02X mess:%s", evt.data, message_recu.rssi, \
+							message_recu.snr, message_recu.param, message_recu.data);
+					if (evt.data) evt.data--;
+					traitement_rx(message_recu.data, evt.data);
+					//lora_handle_event_rx();
+					break;
+				}
+				case EVENT_LORA_RAW_RX: {
+					lora_process_rx_frame(&raw_rx_packet);
+					break;
+				}
+				case EVENT_LORA_RX_TEST: {
+					for (int j = 0; j < evt.data; j++) {
+						LOG_DEBUG("%02X ", mess_pay[j]);
+						// H23U 11 07 HUTTT10
+					}
+					break;
+				}
+
+				case EVENT_LORA_ACK_TIMEOUT: {
+					// Timeout ACK → retry ou passage à l’état suivant
+					lora_tx_state_step();
+					break;
+				}
+
+				case EVENT_LORA_TX_DONE: {
+					LOG_INFO("LoRa message sent event");
+					// Actions pour message LoRa envoyé
+					// TODO
+					break;
+				}
+
+				case EVENT_LORA_REVEIL_BALISE : {
+					LOG_INFO("classe B : Fenetre ecoute balise Radio");
+					lora_handle_classb_beacon_event();
+					break;
+				}
+
+				case EVENT_RELANCE_RX: {
+					relance_radio_rx((uint8_t)evt.data);
+					if (evt.source == 6)
+						LOG_ERROR("Lora error RX");
+					break;
+				}
+
+				case EVENT_ERROR: {
+					relance_radio_rx((uint8_t)evt.data);
+					LOG_ERROR("Error event - source:%i data: %d", evt.source, evt.data);
+					// Actions pour erreur
+					break;
+				}
+				default: {
+					LOG_WARNING("Unknown lora event type: %d", evt.type);
 					break;
 				}
         	}

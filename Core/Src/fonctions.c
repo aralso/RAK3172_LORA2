@@ -50,6 +50,10 @@ uint8_t test_index;
 uint8_t test_var;
 uint32_t test_tab[test_MAX];
 
+S_SortieTor SortieTor[NB_SORTIES];
+etat_entree h_etat_entree[NB_ENTREES];
+EtatPwm    Pwm[NB_PWM];  // 1 ou 2
+
 extern uint8_t uart_timeout_on;
 extern uint8_t cpt_process_lora_tx;
 
@@ -64,8 +68,7 @@ void watchdog_set_timeout(watchdog_task_id_t task_id, uint32_t timeout_s);
 
 static const char* watchdog_task_names[WATCHDOG_TASK_COUNT] = {
     "Default_Tsk",      // WATCHDOG_TASK_DEFAULT = 0
-    "LORA_RX_Tsk",      // WATCHDOG_TASK_LORA_RX = 1
-    "LORA_TX_Tsk",      // WATCHDOG_TASK_LORA_TX = 2
+    "LORA Tsk",      // WATCHDOG_TASK_LORA_RX = 1
     "Appli___Tsk",      // WATCHDOG_TASK_APPLI = 3
     "Uart_RX_Tsk",      // WATCHDOG_TASK_UART_RX = 4
     "Uart_TX_Tsk"       // WATCHDOG_TASK_UART_TX = 5
@@ -76,6 +79,21 @@ TimerHandle_t HTimer_Watchdog;  // Timer pour la vérification périodique du wa
 TimerHandle_t HTimer_24h;
 TimerHandle_t HTimer_20min;
 TimerHandle_t HTimer_LED;
+
+static const char *timerNames[] = {
+    "SORTIE_S0",
+    "SORTIE_S1",
+    "SORTIE_S2",
+    "SORTIE_S3",
+    "SORTIE_S4"
+};
+
+GPIO_TypeDef* GPIO_ports[] = {
+    GPIOA, // 0
+    GPIOB, // 1
+    GPIOC, // 2
+    GPIOH  // 3
+};
 
 #if (CODE_TYPE == 'B')  // garches chaudiere thermometre
 	TimerHandle_t HTimer_temp_period;
@@ -97,18 +115,470 @@ static void Timer20minCallback(TimerHandle_t xTimer);
 static void TimerLEDCallback(TimerHandle_t xTimer);
 
 void SystemClock_Config(void);
+void ETAT_SORTIE(uint8_t num);  // change l'etat des sorties
+void Turn_on_LED(uint8_t num);
+void Turn_off_LED(uint8_t num);
 
 void configure_uart_wakeup(void)
 {
 
 }
 
-void toggle_led(uint8_t num)  // Sorties : LED1:PA13, LED2:PA6, LED3:PA7
+void toggle_led(uint8_t num)  // Sorties : 0:PA13, 1:PA6, 2:PA7
 {
-	if (num==1)
+	if (num==0)
 		HAL_GPIO_TogglePin(LED1_Port, LED1_Pin); // Toggle LED PA13
 
 }
+
+void toggle_led_port(uint8_t num)  // Sorties : 0:PA13, 1:PA6, 2:PA7
+{
+	    HAL_GPIO_TogglePin(GPIO_ports[SortieTor[num].port], 1<<SortieTor[num].pin);
+
+}
+
+void SORTIE_S_Callback(TimerHandle_t xTimer)
+{
+	uint32_t timer_num = (uint32_t) pvTimerGetTimerID(xTimer);
+
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    event_t evt = { EVENT_SORTIES, (uint8_t) timer_num, 0 };
+
+    if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS)
+    {
+        code_erreur = ISR_callback;
+        err_donnee1 = 8;
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+
+}
+
+// initialisation entrées, sorties, PWM
+void Init_ES(void)
+{
+    uint8_t i;
+
+    //  Initialisation de toutes les entrees
+       for (i=0; i<NB_ENTREES; i++)
+       {
+           h_etat_entree[i].configure = 1;
+           h_etat_entree[i].max = 20;
+           h_etat_entree[i].comptage = 10;
+           h_etat_entree[i].etat = 1;
+           h_etat_entree[i].duree_activ_manu = 0;
+           h_etat_entree[i].chgt_etat = 0;
+       }
+       for (i=0; i<NB_SORTIES; i++)
+       {
+           SortieTor[i].port = 0;  // Port GPIO A
+           SortieTor[i].configure = 1;
+           SortieTor[i].etat_initial = 0;
+           SortieTor[i].inversion = 0;  // 0:eteint  1:allume
+           SortieTor[i].etat_ref = 0;
+       }
+       SortieTor[0].pin = 13;  // Sorties : 0:PA13, 1:PA6, 2:PA7
+
+       // setup clock pour allumage periodique sorties
+       for (uint8_t i = 0; i < NB_SORTIES && i < (sizeof(timerNames)/sizeof(timerNames[0])); i++)
+       {
+
+           SortieTor[i].h_clock = xTimerCreate(
+               timerNames[i],
+               300,
+               pdTRUE,
+			   ( void * ) (uintptr_t) i,
+               SORTIE_S_Callback
+           );
+       }
+
+
+	   #if NB_PWM >0
+		   Pwm[0].duree = 0;
+           extern TIM_HandleTypeDef htim3;
+		   Pwm[0].htim = &htim3;
+           Pwm[0].h_clock = xTimerCreate("PWM0", 100, pdTRUE, (void*)0, ETAT_PWM_Callback);
+	   #endif
+
+}
+
+void ETAT_PWM_Callback(TimerHandle_t xTimer)
+{
+    uint32_t timer_num = (uint32_t) pvTimerGetTimerID(xTimer);
+    ETAT_PWM((uint8_t)timer_num);
+}
+
+
+void Clignot_sortie(uint8_t num)
+{
+	if (num < NB_SORTIES)
+	{
+	   // Clignotement  Sortie LED
+		 if (SortieTor[num].configure)
+		 {
+				ETAT_SORTIE(num);    // Clignotement - cas normal
+		 }
+		 else  // sortie non configuree
+			 Turn_off_LED(num);
+	}
+}
+
+void Turn_on_LED(uint8_t num)
+{
+	if (num < NB_SORTIES)
+	{
+		SortieTor[num].etat = 1;
+		uint8_t a=1;
+		if (SortieTor[num].inversion) a=0;
+		HAL_GPIO_WritePin(GPIO_ports[SortieTor[num].port], 1<<SortieTor[num].pin, a);
+	}
+}
+
+void Turn_off_LED(uint8_t num)
+{
+	if (num < NB_SORTIES)
+	{
+		SortieTor[num].etat = 0;
+		uint8_t a=0;
+		if (SortieTor[num].inversion) a=1;
+		HAL_GPIO_WritePin(GPIO_ports[SortieTor[num].port], 1<<SortieTor[num].pin, a);
+	}
+}
+
+
+// Active la sortie num en fonction de consigne et duree
+void ACTIV_SORTIE(uint8_t num, uint8_t consigne, int unsigned duree)
+// num : numero de la sortie
+// consigne (C_Sortie) : 0 eteint, 1 allume, 2:clignot rapide0,3s-0,3s, 3:clig lent 1,5s-1,5s, 4:flash rapide(1ms)
+//          5:spot(10s:allume 4s:eteint)  6 :1 flash lent 0,01-3s  7:7s-7s  8:0,1s-0,1s  9: 0,1s-25s   11 a 19 : 1 a 9 eclats
+//          20:EV (pulse-attente-pulse)
+// duree : duree en 100ms (4s = 40)
+
+// variables internes : C_Sortie_NB:nb de clignotements  C_Sortie_M:compteur Etat:0 ou 1
+{
+if ( (num < NB_SORTIES) )
+ {
+    if (consigne>19) consigne =19;
+    if  ( (consigne >9) && (consigne <11) ) consigne = 4;
+    SortieTor[num].consigne = consigne;
+    SortieTor[num].duree = duree;
+    if (!duree) SortieTor[num].etat_ref = consigne;
+
+    if (consigne >10) SortieTor[num].nb_flash = consigne - 11; else SortieTor[num].nb_flash = 1;  // Nb de clignotements (Consigne>11 uniqu)
+
+    xTimerStop(SortieTor[num].h_clock, 0);
+
+    if (consigne <2) //  0 ou 1 sans timer de chgt d'etat
+    {
+        if (!consigne)
+            Turn_off_LED(num);   // desactive la sortie
+        else
+            Turn_on_LED(num);   // active la sortie
+        if (duree)  // si duree non nulle : demarrage clock
+        {
+        	xTimerChangePeriod (SortieTor[num].h_clock, duree * 100 / portTICK_PERIOD_MS, 0);
+        }
+    }
+    else  // consigne avec timer        // active la sortie
+    {
+        SortieTor[num].etat=0;  // etat initial
+        ETAT_SORTIE(num);
+    }
+ }
+ else
+     code_erreur=depass_tab+3;
+return;
+}
+
+void ETAT_SORTIE(uint8_t num)  // change l'etat des sorties
+{
+    uint16_t i1;  // en millisecondes, max 65 secondes
+    uint8_t cycle_fin=0;
+
+if (num < NB_SORTIES)
+{
+    if ((SortieTor[num].consigne != 0) && (SortieTor[num].consigne != 1))   // Consigne de programmation
+    {
+        if (SortieTor[num].etat == 0)   //Etat de la LED : LED eteinte => calcul du temps d'allumage
+        {
+            i1=0;
+            switch (SortieTor[num].consigne)
+            {                                 //   on     off
+                case 2 : {i1 = 300 ;break;}     //  0,3s - 0,3s
+                case 3 : {i1 = 1500;break;}     //  1,5s - 1,5z
+                case 4 : {i1 = 1 ;break;}     //  1ms - 0,4s
+                case 5 : {i1 = 10000;break;}    //  10s  - 4s
+                case 6 : {i1 = 10 ;break;}     //  0,01s - 3s
+                case 7 :
+                    { if (SortieTor[num].duree>130) i1 = 7000; else i1=1000; break;}
+                case 8 : {i1 = 100 ;break;}      //  0,1s - 0,2s
+                case 9 : {i1 = 100 ; break;}     //  0,1s - 25s
+                case 11 :
+                case 12 :
+                case 13 :
+                case 14 :
+                case 15 :
+                case 16 :
+                case 17 :
+                case 18 :
+                case 19 : {i1 = 100;break;}
+                default : i1 = 10;
+            }
+        }
+        else          //LED allumee => calcul du temps d'extinction
+        {
+
+            i1=0;
+            switch (SortieTor[num].consigne)
+            {
+                case 2 : {i1 = 300 ;break;}
+                case 3 : {i1 = 1500;break;}
+                case 4 : {i1 = 700 ;break;}
+                case 5 : {i1 = 4000;break;}
+                case 6 : {i1 = 3000 ;break;}
+                case 7 : {i1 = 5000 ;break;}
+                case 8 : {i1 = 200  ;break;}
+                case 9 : {i1 = 25000 ;break;}     //  0,01s - 25s
+                case 11 :
+                case 12 :
+                case 13 :
+                case 14 :
+                case 15 :
+                case 16 :
+                case 17 :
+                case 18 :
+                case 19 :
+                {
+                    if (SortieTor[num].nb_flash == 0)
+                    {
+                        i1 = 1200;
+                        SortieTor[num].nb_flash = SortieTor[num].consigne - 11;
+                    }
+                    else
+                    {
+                        i1 = 300;
+                        SortieTor[num].nb_flash --;
+                    }
+                    break;
+                }
+                default : i1 = 10;
+            }
+        }
+        if ((SortieTor[num].duree) && ( i1/100 >= SortieTor[num].duree ))
+            cycle_fin=1;
+    }
+    else  // 0 ou 1 => fin de cycle
+    {
+        cycle_fin=1;
+    }
+
+    if (cycle_fin)  // fin de cycle
+    {
+        ACTIV_SORTIE( num, SortieTor[num].etat_ref, 0);   // Arret clignotement sortie au bout du temps Duree
+    }
+    else   // cycle continue
+    {
+        if (SortieTor[num].etat == 0)
+            Turn_on_LED(num);  // active la sortie
+        else
+            Turn_off_LED(num);  // desactive la sortie
+
+        if (SortieTor[num].duree) SortieTor[num].duree -= i1/100;
+
+        xTimerChangePeriod ( SortieTor[num].h_clock, i1/ portTICK_PERIOD_MS, 0);  // millisecondes
+    }
+ }
+ else code_erreur=depass_tab+4;//bit_set(erreur_sms,5);
+return;
+}
+
+
+// Activation PWM
+// param numero : 0:buzz, 1:light
+// parametre Consigne : :0 eteint, 1:continu, 2:sonnerie rapide1/1, 3:sonnerie lent1/1, 4:bip rapide,5:2 tons, 6: 1 bip court espace, 7(2s-0,5s:Spot PWM) 11 a 19 : 1 a 9 flash
+//      Nota : 11 Ã  19 : duree d'un cycle : ((3+1)*Nb bips+13) x100ms
+// parametre duree : duree de fonctionnment du buzzer en 0,1 seconde (0 Ã  6553s - 2h)
+// parametre periode : 2700=> 750hz   900=>2200Hz   500=>4000Hz
+// parametre duty : permet de regler le volume 0 a 255 : optimum=20
+
+void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned periode1, uint8_t duty1)  //dï¿½finit les variables buzzer en fonction de 'consigne', duree, volume
+{
+    #if NB_PWM > 0
+    if (num < NB_PWM)
+    {
+        Pwm[num].consigne = consigne;    // Nota : a la fin de cette routine, le buzzer s'allume ou s'eteint
+        Pwm[num].nb_flash = consigne - 11;
+        Pwm[num].etat = 0;      // 0:pas dï¿½marï¿½, 1:pause, 2:allume, 3:2ï¿½ ton
+        Pwm[num].duree = duree;
+        Pwm[num].periode1 = periode1;
+        Pwm[num].duty1 = duty1;
+
+        xTimerStop(Pwm[num].h_clock, 0);
+
+        // Nota : le premier cycle comporte le duty precedent
+        if ((consigne <2) && (duree)) //  0 ou 1 sans timer de chgt d'etat
+        {
+            if (!consigne)
+                eteint_PWM(num);   // desactive la sortie
+            else
+            {
+                allumedebut_PWM(num);   // active la sortie PWM
+                Pwm[num].etat = 2;      // 0:pas demarré, 1:pause, 2:allumé
+            }
+            xTimerChangePeriod (Pwm[num].h_clock, duree * 100/ portTICK_PERIOD_MS, 0);  // millisecondes
+        }
+        else  // consigne avec timer        // active la sortie
+        {
+            ETAT_PWM(num);
+        }
+    }
+    #endif
+}
+
+
+void allumedebut_PWM(uint8_t num)
+{
+    if (Pwm[num].htim != NULL)
+    {
+        // 1. Verrouiller le mode STOP2 (Inhibition)
+        #include "stm32_lpm.h"
+        #include "utilities_def.h"
+        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_DISABLE);
+
+        // 2. Configurer la période et le duty cycle
+        uint32_t pulse = (Pwm[num].duty1 * (Pwm[num].periode1 + 1)) / 255;
+        __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode1);
+        __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
+
+        // 3. Démarrer le PWM
+        HAL_TIM_PWM_Start(Pwm[num].htim, TIM_CHANNEL_2);
+        Pwm[num].etat = 2;
+    }
+}
+
+void allume_PWM(uint8_t num)
+{
+    if (Pwm[num].htim != NULL)
+    {
+        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_DISABLE);
+        HAL_TIM_PWM_Start(Pwm[num].htim, TIM_CHANNEL_2);
+        Pwm[num].etat = 2;
+    }
+}
+
+void eteint_PWM(uint8_t num)
+{
+    if (Pwm[num].htim != NULL)
+    {
+        HAL_TIM_PWM_Stop(Pwm[num].htim, TIM_CHANNEL_2);
+        // Réautoriser le mode STOP2
+        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_ENABLE);
+        Pwm[num].etat = 1;
+    }
+}
+
+void ETAT_PWM(uint8_t num)
+{
+    uint8_t a;
+    uint8_t cycle_fin=0;
+    uint8_t cons = Pwm[num].consigne;
+
+   if (cons > 1)
+    {
+        if (Pwm[num].etat != 2 && Pwm[num].etat != 3)   // buzzer eteint ou pause
+        {
+            a = 0;
+            switch(cons) {
+                case 2: a = 2; break;
+                case 3: a = 15; break;
+                case 4: a = 1; break;
+                case 5: a = 10; break;
+                case 6: a = 100; break;
+                case 7: a = 20; break;
+                default: a = 0;
+            }
+        }
+        else    // buzzer sonne
+        {
+            switch (cons)
+            {
+                case 2 : a = 2; break;
+                case 3 : a = 15; break;
+                case 4 : a = 4; break;
+                case 5 : a = 15; break;
+                case 6 : a = 2; break;
+                case 7 : a = 5; break;
+                case 11...19:
+                    if (Pwm[num].nb_flash == 0) {
+                        a = 12;
+                        Pwm[num].nb_flash = cons - 11;
+                    } else {
+                        a = 2;
+                        Pwm[num].nb_flash--;
+                    }
+                    break;
+                default : a = 0;
+            }
+        }
+        if (Pwm[num].duree && a >= Pwm[num].duree)
+            cycle_fin = 1;
+   }
+   else
+   {
+       cycle_fin = 1;
+   }
+
+   if (cycle_fin)
+   {
+       eteint_PWM(num);
+       xTimerStop(Pwm[num].h_clock, 0);
+   }
+   else
+   {
+       if (cons != 5)
+       {
+           if (Pwm[num].etat < 2)
+               allume_PWM(num);
+           else
+               eteint_PWM(num);
+       }
+       else  // bi-ton
+       {
+           if (Pwm[num].etat == 2)
+           {
+               Pwm[num].etat = 3;
+               uint32_t pulse = (Pwm[num].duty2 * (Pwm[num].periode2 + 1)) / 255;
+               __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode2);
+               __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
+           }
+           else
+           {
+               Pwm[num].etat = 2;
+               uint32_t pulse = (Pwm[num].duty1 * (Pwm[num].periode1 + 1)) / 255;
+               __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode1);
+               __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
+               if (Pwm[num].etat == 0) allume_PWM(num); // Sécurité init
+           }
+       }
+       if (Pwm[num].duree) Pwm[num].duree -= a;
+       xTimerChangePeriod(Pwm[num].h_clock, a * 100 / portTICK_PERIOD_MS, 0);
+   }
+}
+
+
+uint8_t lecture_etat_sortie(uint8_t num)
+{
+    return SortieTor[num].consigne;
+}
+
+
+void message_lecture_etat_sortie(uint8_t num, uint8_t dest)
+{
+    envoie_mess_ASC(param_def, "%cXL%i:%i-%i", dest, num, SortieTor[num].consigne, SortieTor[num].duree/8);
+}
+
 
 // Avant KernerInitialize
 void init_functions1(void)
@@ -158,7 +628,7 @@ void init_functions2(void)
 			(void*)0,                           // ID optionnel
 			TimerLEDCallback                     // Callback
 		);
-		if (HTimer_LED != NULL) xTimerStart(HTimer_LED, 0);
+		//if (HTimer_LED != NULL) xTimerStart(HTimer_LED, 0);
 
 
 		#if (CODE_TYPE == 'B')  // garches chaudiere thermometre

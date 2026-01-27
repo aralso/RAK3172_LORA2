@@ -31,14 +31,8 @@ typedef struct {
 typedef enum  {
     EVENT_BUTTON = 0,
 	EVENT_LED,
-    EVENT_LORA_TX,
-	EVENT_LORA_TX_DONE,
-	EVENT_TIMER_LORA_TX,
-	EVENT_LORA_RX,
-	EVENT_LORA_REVEIL_BALISE,
+	EVENT_SORTIES,
     EVENT_UART_RX,
-	EVENT_RELANCE_RX,
-    EVENT_ERROR,
     EVENT_WAKE_UP,
     EVENT_SLEEP,
     EVENT_SYSTEM_RESET,
@@ -49,18 +43,12 @@ typedef enum  {
 	EVENT_TIMER_LPTIM,
 	EVENT_UART_RAZ,
     EVENT_CAD_DONE,
-    EVENT_LORA_TX_STEP,
-	EVENT_LORA_IDLE,
-    EVENT_LORA_ACK_TIMEOUT,
-	EVENT_LORA_RX_TIMEOUT,
-	EVENT_AlarmB,
 	#if CODE_TYPE == 'C'
 		EVENT_TIMER_1min,
 		EVENT_TIMER_10min,
 		EVENT_TIMER_3Voies,
 	#endif
-	EVENT_LORA_RX_TEST,
-	EVENT_LORA_RAW_RX
+		EVENT_AlarmB
 } EventId_t;
 
 #define TIMER_PERIOD_MS  50000   // 50s
@@ -93,6 +81,53 @@ typedef enum {
     WATCHDOG_CONTEXT_UART_RX_WAIT,  // UART RX en attente (pas de surveillance)
     WATCHDOG_CONTEXT_UART_RX_ACTIVE // UART RX en traitement (surveillance active)
 } watchdog_context_t;
+
+// ENTREES
+typedef struct
+{
+  uint8_t           port;        // GPIO
+  uint8_t           pin;
+  uint16_t          comptage;          // comptage en ms de 0 au max
+  uint16_t          max;                // seuil max
+  uint8_t           etat;                // 0 ou 1
+  uint8_t           chgt_etat;           // 0 pas de chgt, 1: dÃ©sactivation, 2: activation
+  uint8_t           activ_manuelle;      // 0 : activÃ© Ã  0   1:activÃ© Ã  1
+  uint16_t          duree_activ_manu;    // durÃ©e en 100ms de l'activation (max 2h)
+  uint8_t           configure;
+} etat_entree;
+
+// SORTIES
+typedef struct
+{
+  uint8_t           port;    // GPIO
+  uint8_t           pin;
+  uint8_t           etat_initial;
+  uint8_t           configure;    // 0:sortie non configuree   1:sortie utilisable et configuree
+  uint8_t           consigne;
+  uint16_t          duree;
+  uint8_t           etat;
+  uint8_t           nb_flash;
+  uint8_t           etat_ref;
+  uint8_t           inversion;  // 1: inversion de la sortie
+  TimerHandle_t      h_clock;     // handle clock
+} S_SortieTor;
+
+
+// Sortie PWM
+typedef struct
+{
+    uint8_t     consigne;
+    uint8_t     nb_flash;
+    uint16_t    duree; // duree totale restante
+    uint8_t     etat;  // 0:eteint 1:pause 2:allume 3:2ï¿½ton
+    uint16_t     periode1;
+    uint8_t     duty1;
+    uint16_t     periode2;
+    uint8_t     duty2;
+    uint8_t     duree_chgt;  // duree avant changement
+    TimerHandle_t      h_clock;     // handle clock
+    TIM_HandleTypeDef* htim;
+} EtatPwm;
 
 // Structure pour le suivi des tâches
 typedef struct {
@@ -139,6 +174,10 @@ extern uint8_t batt_apres; // mesure batterie apres transmission LORA
 extern uint8_t mesure_batt_ok;
 extern uint8_t nb_reset;
 
+extern S_SortieTor SortieTor[];
+extern etat_entree h_etat_entree[];
+extern EtatPwm    Pwm[];  // 1 ou 2
+
 extern TimerHandle_t HTimer_temp_period;
 
 #define test_MAX 20
@@ -172,8 +211,15 @@ uint16_t decod_dec16 (uint8_t* index);
 void PIDd_Init(PID_t *pid, float Kp, float Ti, float Td, float dt, float out_min, float out_max);
 float PIDd_Compute(PID_t *pid, float setpoint, float measurement);
 void toggle_led(uint8_t num);
+void toggle_led_port(uint8_t num);  // Sorties : 0:PA13, 1:PA6, 2:PA7
+
 void lecture_erreurs(uint8_t dest);
 void raz_erreur(void);
+void Clignot_sortie(uint8_t num);
+void Init_ES(void);
+void message_lecture_etat_sortie(uint8_t num, uint8_t dest);
+void ACTIV_SORTIE(uint8_t num, uint8_t consigne, int unsigned duree);
+void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned periode1, uint8_t duty1);  //dï¿½finit les variables buzzer en fonction de 'consigne', duree, volume
 
 uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);

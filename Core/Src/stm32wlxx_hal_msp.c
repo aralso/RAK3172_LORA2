@@ -507,6 +507,32 @@ void HAL_SUBGHZ_MspDeInit(SUBGHZ_HandleTypeDef* hsubghz)
 
 }
 
-/* USER CODE BEGIN 1 */
+void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim_pwm)
+{
+  if(htim_pwm->Instance==TIM3)
+  {
+    __HAL_RCC_TIM3_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**TIM3 GPIO Configuration
+    PA7     ------> TIM3_CH2
+    */
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  }
+}
+
+void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* htim_pwm)
+{
+  if(htim_pwm->Instance==TIM3)
+  {
+    __HAL_RCC_TIM3_CLK_DISABLE();
+    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_7);
+  }
+}
 
 /* USER CODE END 1 */

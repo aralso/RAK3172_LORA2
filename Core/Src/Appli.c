@@ -7,7 +7,7 @@
 
  TODO :
  clignot sorties, pwm,
- antirebond 2 boutons,
+ antirebond 2 boutons entrees
  2e uart
  séparer en 2 taches (appli, lora)
  mettre messages longs (10k)
@@ -23,6 +23,7 @@
  IA-config de lptim1 pour freertos
  IA-Mat-envoie log
 
+ v1.14 01/2026 : séparation taches Lora et appli, clignotement sorties
  v1.13 01/2026 : HAL_Delay corrigé, SLE-lecture erreurs, nb_reset
  v1.12 12/2025 : modif timers : LPTIM1 pour freertos, RTC pour Radio, valid comm lora
  v1.11 12/2025 : modif STOP2 freertos par timer LPTIM1
@@ -154,7 +155,7 @@ void init1()  // avant KernelInitialize
 		/*for (uint8_t i=0; i<10; i++)
 		{
 			HAL_Delay(500);
-		    toggle_led(1);
+		    toggle_led(0);
 		}
 		HAL_Delay(2000);
 		for (uint8_t i=0; i<10; i++)
@@ -163,7 +164,7 @@ void init1()  // avant KernelInitialize
 			for(;;) {
 				if (HAL_GetTick() > timeout) break;
 			}
-			toggle_led(1);
+			toggle_led(0);
 		}
 		HAL_Delay(2000);*/
 
@@ -179,6 +180,7 @@ void init1()  // avant KernelInitialize
 		}
 		__enable_irq();
 
+
 	 /*   uint32_t timeout = HAL_GetTick() + 100; // 100ms max
 	    while (__HAL_UART_GET_FLAG(&hlpuart1, USART_ISR_BUSY) == SET) {
 	        if (HAL_GetTick() > timeout) {
@@ -189,7 +191,7 @@ void init1()  // avant KernelInitialize
 	        }
 	    }*/
 
-	    /*toggle_led(1);
+	    /*toggle_led(0);
 
 	    timeout = HAL_GetTick() + 100; // 100ms
 		for(;;) {
@@ -210,7 +212,7 @@ void init1()  // avant KernelInitialize
 		  HAL_Delay(500);
       }
 
-      toggle_led(1);
+      toggle_led(0);
 
 	   /* timeout = HAL_GetTick() + 100; // 100ms
 		for(;;) {
@@ -899,7 +901,7 @@ void Appli_Tsk(void *argument)
 	/*for (uint8_t i=0; i<10; i++)
 	{
 		HAL_Delay(500);
-	    toggle_led(1);
+	    toggle_led(0);
 	}
 	HAL_Delay(2000);
 	for (uint8_t i=0; i<10; i++)
@@ -908,7 +910,7 @@ void Appli_Tsk(void *argument)
 		for(;;) {
 			if (HAL_GetTick() > timeout) break;
 		}
-		toggle_led(1);
+		toggle_led(0);
 	}
 
 	osDelay(2000);
@@ -916,7 +918,7 @@ void Appli_Tsk(void *argument)
 	/*for (uint8_t i=0; i<10; i++)
 	{
 		osDelay(500);
-	    toggle_led(1);
+	    toggle_led(0);
 	}*/
 
 	// 1. Capturer l'état initial
@@ -956,7 +958,7 @@ void Appli_Tsk(void *argument)
 	osDelay(2000);
 
 	// 1. Capturer l'état initial
-	hal_before = HAL_GetTick();
+	/*hal_before = HAL_GetTick();
 	os_before = xTaskGetTickCount();
 	LOG_INFO("--- TEST TEMPS 3 ---");
 	LOG_INFO("Avant osDelay(30s) - HAL: %u, OS: %u", hal_before, os_before);
@@ -975,7 +977,7 @@ void Appli_Tsk(void *argument)
 	LOG_INFO("Deltas mesurés - HAL: %u, OS: %u", delta_hal, delta_os);
 
 	osDelay(2000);
-	LOG_INFO("debut3");
+	LOG_INFO("debut3");*/
 
 	for(;;)
     {
@@ -1003,15 +1005,19 @@ void Appli_Tsk(void *argument)
         	switch (evt.type) {
 
 				case EVENT_LED: {
-					toggle_led(1);
+					toggle_led(0);
 					//LOG_INFO("Toggle Led1");
+					break;
+				}
+				case EVENT_SORTIES:{
+                    Clignot_sortie(evt.source);
 					break;
 				}
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
 					// Actions pour bouton pressé
 					//HAL_GPIO_TogglePin(LED1_GPIO, LED1_Pin); // Toggle LED PA13
-					//toggle_led(1);
+					//toggle_led(0);
 
 					// Envoyer message LoRa
 					//char messa[] = "Button pressed!";
@@ -1023,85 +1029,6 @@ void Appli_Tsk(void *argument)
 					LOG_INFO("Cad Done : %i", evt.data);
 					lora_tx_on_cad_result(evt.data != 0);
 
-					break;
-				}
-				case EVENT_LORA_TX: {
-					LOG_INFO("Debut de transmission LORA");
-					lora_handle_event_tx(evt.source);
-					break;
-				}
-				case EVENT_LORA_TX_STEP: {
-					LOG_INFO("TX_step ");
-					lora_tx_state_step();
-					break;
-				}
-				case EVENT_TIMER_LORA_TX: {   // fin du timer tx_rx
-					LOG_INFO("Timer lora tx");
-					lora_timer_tx();
-					break;
-				}
-
-				case EVENT_LORA_RX_TIMEOUT: { // timeout du RX
-					LOG_INFO("Timeout LORA RX  g_rx:%i ", evt.source);
-					relance_radio_rx(0);
-					break;
-				}
-
-				case EVENT_LORA_IDLE: {  // Remise Radio en Sleep ou RX (apres délai RX)
-		        	relance_radio_rx(0);  // RX ou sleep
-					break;
-				}
-
-				case EVENT_LORA_RX: {
-					LOG_INFO("message LORA recu len:%i rssi:%i snr:%i param:%02X mess:%s", evt.data, message_recu.rssi, \
-							message_recu.snr, message_recu.param, message_recu.data);
-					if (evt.data) evt.data--;
-					traitement_rx(message_recu.data, evt.data);
-					//lora_handle_event_rx();
-					break;
-				}
-				case EVENT_LORA_RAW_RX: {
-					lora_process_rx_frame(&raw_rx_packet);
-					break;
-				}
-				case EVENT_LORA_RX_TEST: {
-					for (int j = 0; j < evt.data; j++) {
-						LOG_DEBUG("%02X ", mess_pay[j]);
-						// H23U 11 07 HUTTT10
-					}
-					break;
-				}
-
-				case EVENT_LORA_ACK_TIMEOUT: {
-					// Timeout ACK → retry ou passage à l’état suivant
-					lora_tx_state_step();
-					break;
-				}
-
-				case EVENT_LORA_TX_DONE: {
-					LOG_INFO("LoRa message sent event");
-					// Actions pour message LoRa envoyé
-					// TODO
-					break;
-				}
-
-				case EVENT_LORA_REVEIL_BALISE : {
-					LOG_INFO("classe B : Fenetre ecoute balise Radio");
-					lora_handle_classb_beacon_event();
-					break;
-				}
-
-				case EVENT_RELANCE_RX: {
-					relance_radio_rx((uint8_t)evt.data);
-					if (evt.source == 6)
-						LOG_ERROR("Lora error RX");
-					break;
-				}
-
-				case EVENT_ERROR: {
-					relance_radio_rx((uint8_t)evt.data);
-					LOG_ERROR("Error event - source:%i data: %d", evt.source, evt.data);
-					// Actions pour erreur
 					break;
 				}
 

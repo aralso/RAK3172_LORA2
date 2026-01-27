@@ -206,7 +206,7 @@ typedef struct
         uint8_t payload[MESS_LG_MAX];       //!< Payload
 } lora_TxPacket;
 
-/*typedef enum  {
+typedef enum  {
     EVENT_LORA_TX,
 	EVENT_LORA_TX_DONE,
 	EVENT_TIMER_LORA_TX,
@@ -220,7 +220,7 @@ typedef struct
 	EVENT_LORA_RX_TIMEOUT,
 	EVENT_LORA_RX_TEST,
 	EVENT_LORA_RAW_RX
-} EventLora_t;*/
+} EventLora_t;
 
 void subghz_enter_sleep_mode(void);
 void subghz_wake_up(void);

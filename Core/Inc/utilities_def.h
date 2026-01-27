@@ -47,7 +47,7 @@ typedef enum
   /* USER CODE END CFG_LPM_Id_t_0 */
   CFG_LPM_DUMMY_Id,
   /* USER CODE BEGIN CFG_LPM_Id_t */
-
+  CFG_LPM_PWM_Id,
   /* USER CODE END CFG_LPM_Id_t */
 } CFG_LPM_Id_t;
 /* USER CODE BEGIN ET */

@@ -20,7 +20,9 @@
 #endif
 
 
-#define Nb_sorties	1
+#define NB_PWM 1        // Sorties PWM : 0:buzzer   1:LED IR Flash
+#define NB_SORTIES 1    // Sorties TOR : 0:Led0  2:Enable TP4056   3:ESP32 Power
+#define NB_ENTREES 1
 
 #define LED1_Pin GPIO_PIN_13   // LED1 : PA13
 #define LED1_Port GPIOA

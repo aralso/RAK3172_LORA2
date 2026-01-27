@@ -51,6 +51,7 @@
 
 #define code_erreur_envoi 0x50
 #define code_erreur_dequeue 0x51
+#define depass_tab  0x52
 
 #define erreur_RX_full         0x20
 #define erreur_rx_uart_bin		0x21

@@ -65,6 +65,11 @@ uint32_t ReadVBAT(void);
 	VERe : Reset
 	VLSt VLSl : compteur sleep et stop
 	VLN
+
+	Sorties :
+	XL4 : lecture etat sortie 4 : consigne+duty
+	XE01 :Led0 1s
+	XEBcpcd : buzzer XEB1263=> 0,4s  600Hz Vol:10%
 */
 
 uint8_t param_def = 0x30; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
@@ -130,7 +135,7 @@ void get_tick_timer_rtc(void);
 osThreadId_t Uart_RX_TaskHandle;
 const osThreadAttr_t Uart_RX_Task_attributes = {
   .name = "Uart_RX_Task",
-  .priority = (osPriority_t) osPriorityLow5,
+  .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 512 * 4    // 190 utilisé
 };
 
@@ -138,7 +143,7 @@ const osThreadAttr_t Uart_RX_Task_attributes = {
 osThreadId_t Uart_TX_TaskHandle;
 const osThreadAttr_t Uart_TX_Task_attributes = {
   .name = "Uart_TXTask",
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityLow5,
   .stack_size = 256 * 4    // 89 utilisé (+121 pour LOG)
 };
 
@@ -1680,14 +1685,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  LOG_INFO("recep TL0");
                   envoie_mess_ASC(param_def, "%cOK", message_in[1]);
               }
-              if ((message_in[4] == '2') && (longueur_m==5))  // TL2 renvoie tick du timer RTC
-              {
-            	  	 get_tick_timer_rtc();
-              }
 		      if ( (message_in[4] =='1'))  // LEcture TL1
 		      {
 			     LOG_INFO("Mess recu lora: %s lg:%i", message_in, longueur_m);
 		      }
+              if ((message_in[4] == '2') && (longueur_m==5))  // TL2 renvoie tick du timer RTC
+              {
+            	  	 get_tick_timer_rtc();
+              }
 		      if ( (message_in[4] =='3'))  // TL3 Test error_handler
 		      {
 		    	  Error_Handler(14);
@@ -1695,6 +1700,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 		      if ( (message_in[4] =='4'))  // TL4xx Time On Air
 		      {
 			      test_getTimeOnAir((message_in[5]-'0')*10  + message_in[6]-'0');
+		      }
+		      if ( (message_in[4] =='5'))  // TL5 toggle_led 0
+		      {
+		    	  	  toggle_led(0);
+		      }
+		      if ( (message_in[4] =='6'))  // TL5 toggle_led 0
+		      {
+		    	  toggle_led_port(0);
 		      }
 
               if ((message_in[4] == 'T') && (longueur_m==5))  // TLT => print test_tab
@@ -1870,6 +1883,87 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
 				  watchdog_reset_system();
 			  }
           }
+
+          // ********************************   XXXXXXXXXXXXXXXXXX   ********************
+
+
+          if (message_in[2] == 'X')     //  ACTIVATION SORTIES
+          {
+              uint8_t b = message_in[4] - '0';
+              if ((message_in[3] == 'E') && (b < NB_SORTIES))
+              {
+                  if (longueur_m == 6)   // XExy : Activation sortie X pdt Y 0,1sec    XE01 (Led0 1s) 0:sans limite
+                   {
+                      ACTIV_SORTIE(b,1,(int unsigned)(message_in[5]-'0')*10);
+                   }
+                  if (longueur_m == 7) // XExyz : Activation sortie X mode Y pdt z 0,1sec    XE021 (Led0 mode2 1 sec
+                    {                                               // XE421 (ignition modem 2s mode:1)
+                      ACTIV_SORTIE (b, message_in[5] - '0',  (int unsigned) (message_in[6] - '0') * 10);// 5:5s  A:17s Z:42s  {:73s  +:4 min
+                    }
+              }
+
+              if ((message_in[3] == 'L') && (b < NB_SORTIES)) // XLx : Lecture ETAT SORTIE  X      XL4 => consigne - duree
+              {
+				  message_lecture_etat_sortie (b, message_in[1]);
+              }
+
+
+              if ((message_in[3] == 'E') && (message_in[4] == 'B')  && (longueur_m == 9))  // XEBcpcd  BUZZER
+                 // Activation buzzer XEBcdpd  ex:XEB1233 Z94  duree*0,1s/periode/duty
+                {  // 1346   =>  1, 0,5s ,1200Hz,vol6   2446:bip  2446
+                  // periode : 0-900:2200Hz  4-1700:1200Hz  6-2100:950Hz
+                  // consigne, duree, periode, duty
+                  // duree : 1:0,2s 2:0,4s  3:1s  4:1,6s  5:3,2s   6:6s   7:12s   8:25s   9:50s   10:1,5min
+                  ACTIV_PWM ( 0,message_in[5] - '0', (uint32_t)( 1 << (message_in[6] - '0')),
+                             (uint32_t)(900 + 200 *(message_in[7] - '0')), (message_in[8] - '0')*8);
+                }
+              if ((message_in[3] == 'S') && (longueur_m == 7))  // XSabc  SPOT LED en PWN  a:mode  b:duree  c:duty
+              {
+                  // Activation Spot PWM : frequence:10kHz(200)  duty 20%
+                  // mode  : 0:eteint  1:allume  3:lent  7:2s-0,5
+                  // duree : 1:0,2s 2:0,4s  3:1s  4:1,6s  5:3,2s   6:6s   7:12s   8:25s   9:50s   10:5min
+                  // duty : 0:0,5% 1:1%  2:2%  3:3%%  4:8% 5:12%  6:16%  7:25% 8:35%  9:50%
+                  // Exemple XS144, XS74
+                  uint8_t duty;
+                  duty = message_in[6]-'0';
+                  if (duty <4)  // 0,1,2,3
+                      duty = (1<<duty);
+                  else   // 4 a 9
+                  {
+                      if (duty==4) duty=20; // 20=8%
+                      if (duty==5) duty=31; // 31=12%
+                      if (duty==6) duty=41; // 41=16%
+                      if (duty==7) duty=64; // 64=25%
+                      if (duty==8) duty=128; // 128=50%
+                      if (duty==9) duty=255; // 255=100%
+                  }
+
+                  ACTIV_PWM ( 1, message_in[4] - '0', (uint32_t)( 1 << ((message_in[5] - '0')*3)), 200, duty);
+                  //  ACTIV_PWM ( 1,1, Spot_allumage_nuit*10, 200, 255);  // duree:30 secondes, frequence 10kHz, duty:100%
+              }
+
+              if ((message_in[3] == 'I') && (longueur_m == 8))  // XIcdpd  SPOT LED en PWM  c:consigne  d:duree p:periode d:duty
+              {  // bXI1827
+                  /* Allumage LED IR des cameras PIR :
+                  periode : 2700=> 750hz   900=>2200Hz   500=>4000Hz   100->20kHz
+                  periode : 1(50):40kHz 4:(200):10kHz
+                  duty :  20=8%  31=12%  41=16%  64=25%  128=50%  255=100%
+                  uint16_t periode=500;  */
+
+                  // Exemple XS1442:normal  XS1443:fort
+                  uint8_t duty;
+                  duty = message_in[7]-'0';
+                  if (duty==4) duty=20; // 20=8%
+                  if (duty==5) duty=31; // 31=12%
+                  if (duty==6) duty=41; // 41=16%
+                  if (duty==7) duty=64; // 64=25%
+                  if (duty==8) duty=128; // 128=50%
+                  if (duty==9) duty=255; // 255=100%
+                  ACTIV_PWM ( 1,message_in[4] - '0', (uint32_t)( 1 << (message_in[5] - '0')),
+                             (uint32_t)( 50 *(message_in[6] - '0')), duty);
+              }
+            }
+
 
       }
   }
