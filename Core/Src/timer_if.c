@@ -236,7 +236,7 @@ UTIL_TIMER_Status_t TIMER_IF_StartTimer(uint32_t timeout)
   sAlarm.BinaryAutoClr = RTC_ALARMSUBSECONDBIN_AUTOCLR_NO;
   sAlarm.AlarmTime.SubSeconds = UINT32_MAX - timeout;
   sAlarm.AlarmMask = RTC_ALARMMASK_ALL;
-   sAlarm.AlarmSubSecondMask = 0; // RTC_ALARMSUBSECONDBINMASK_NONE;
+  sAlarm.AlarmSubSecondMask = 0; //RTC_ALARMSUBSECONDBINMASK_NONE;
   sAlarm.Alarm = RTC_ALARM_A;
   if (HAL_RTC_SetAlarm_IT(&h, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
   {

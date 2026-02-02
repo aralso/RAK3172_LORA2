@@ -62,6 +62,7 @@ I2C_HandleTypeDef hi2c2;
 IWDG_HandleTypeDef hiwdg;
 
 LPTIM_HandleTypeDef hlptim1;
+LPTIM_HandleTypeDef hlptim2;
 LPTIM_HandleTypeDef hlptim3;
 
 UART_HandleTypeDef hlpuart1;
@@ -70,13 +71,11 @@ RTC_HandleTypeDef hrtc;
 
 SUBGHZ_HandleTypeDef hsubghz;
 
-TIM_HandleTypeDef htim3;
-
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 256 * 4
 };
 /* USER CODE BEGIN PV */
@@ -102,9 +101,9 @@ void MX_RTC_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_LPTIM1_Init(void);
 static void MX_ADC_Init(void);
-
-static void MX_TIM3_Init(void);
+static void MX_I2C2_Init(void);
 static void MX_LPTIM3_Init(void);
+static void MX_LPTIM2_Init(void);
 void StartDefaultTask(void *argument);
 
 static void MX_NVIC_Init(void);
@@ -157,7 +156,7 @@ int main(void)
   MX_RTC_Init();
   MX_LPTIM1_Init();
   MX_LPTIM3_Init();
-  MX_TIM3_Init();
+  MX_LPTIM2_Init();
 
   /* Initialize interrupts */
   MX_NVIC_Init();
@@ -469,6 +468,40 @@ static void MX_LPTIM1_Init(void)
 }
 
 /**
+  * @brief LPTIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_LPTIM2_Init(void)
+{
+
+  /* USER CODE BEGIN LPTIM2_Init 0 */
+
+  /* USER CODE END LPTIM2_Init 0 */
+
+  /* USER CODE BEGIN LPTIM2_Init 1 */
+
+  /* USER CODE END LPTIM2_Init 1 */
+  hlptim2.Instance = LPTIM2;
+  hlptim2.Init.Clock.Source = LPTIM_CLOCKSOURCE_APBCLOCK_LPOSC;
+  hlptim2.Init.Clock.Prescaler = LPTIM_PRESCALER_DIV1;
+  hlptim2.Init.Trigger.Source = LPTIM_TRIGSOURCE_SOFTWARE;
+  hlptim2.Init.OutputPolarity = LPTIM_OUTPUTPOLARITY_HIGH;
+  hlptim2.Init.UpdateMode = LPTIM_UPDATE_ENDOFPERIOD;
+  hlptim2.Init.CounterSource = LPTIM_COUNTERSOURCE_INTERNAL;
+  hlptim2.Init.Input1Source = LPTIM_INPUT1SOURCE_GPIO;
+  hlptim2.Init.Input2Source = LPTIM_INPUT2SOURCE_GPIO;
+  if (HAL_LPTIM_Init(&hlptim2) != HAL_OK)
+  {
+    Error_Handler(5);
+  }
+  /* USER CODE BEGIN LPTIM2_Init 2 */
+
+  /* USER CODE END LPTIM2_Init 2 */
+
+}
+
+/**
   * @brief LPTIM3 Initialization Function
   * @param None
   * @retval None
@@ -713,10 +746,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_13, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_13, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA6 PA13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_13;
+  /*Configure GPIO pins : PA6 PA7 PA13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -796,42 +829,6 @@ static void MX_GPIO_Init(void)
           Error_Handler(0);
       }*/
   /* USER CODE END MX_GPIO_Init_2 */
-}
-
-/**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM3_Init(void)
-{
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 48 - 1; // 48MHz / 48 = 1MHz -> 1 tick = 1us
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 1000 - 1; // Par défaut 1kHz
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler(20);
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler(20);
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler(20);
-  }
 }
 
 /* USER CODE BEGIN 4 */

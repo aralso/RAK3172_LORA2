@@ -35,7 +35,7 @@
 
 #define LORA_BROADCAST_ADDR         0x7D
 
-#define DR_defaut	5		// DR0=SF12  DR5:SF7-BW125  DR6=SF7-BW250  DR7=FSK
+#define DR_defaut	0		// DR0=SF12  DR5:SF7-BW125  DR6=SF7-BW250  DR7=FSK
 
 // Machine d’états non bloquante pour la phase TX/ACK/RX
 typedef enum {
@@ -210,6 +210,7 @@ typedef enum  {
     EVENT_LORA_TX,
 	EVENT_LORA_TX_DONE,
 	EVENT_TIMER_LORA_TX,
+	EVENT_CAD_DONE,
 	EVENT_LORA_RX,
 	EVENT_LORA_REVEIL_BALISE,
 	EVENT_RELANCE_RX,

@@ -221,6 +221,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
   */
 void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
   if(hlptim->Instance==LPTIM1)
   {
@@ -248,6 +249,39 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* hlptim)
     /* USER CODE BEGIN LPTIM1_MspInit 1 */
 
     /* USER CODE END LPTIM1_MspInit 1 */
+  }
+  else if(hlptim->Instance==LPTIM2)
+  {
+    /* USER CODE BEGIN LPTIM2_MspInit 0 */
+
+    /* USER CODE END LPTIM2_MspInit 0 */
+
+  /** Initializes the peripherals clocks
+  */
+    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LPTIM2;
+    PeriphClkInitStruct.Lptim2ClockSelection = RCC_LPTIM2CLKSOURCE_LSE;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+    {
+      Error_Handler(12);
+    }
+
+    /* Peripheral clock enable */
+    __HAL_RCC_LPTIM2_CLK_ENABLE();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**LPTIM2 GPIO Configuration
+    PA4     ------> LPTIM2_OUT
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_4;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF14_LPTIM2;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* USER CODE BEGIN LPTIM2_MspInit 1 */
+
+    /* USER CODE END LPTIM2_MspInit 1 */
   }
   else if(hlptim->Instance==LPTIM3)
   {
@@ -294,6 +328,23 @@ void HAL_LPTIM_MspDeInit(LPTIM_HandleTypeDef* hlptim)
     /* USER CODE BEGIN LPTIM1_MspDeInit 1 */
 
     /* USER CODE END LPTIM1_MspDeInit 1 */
+  }
+  else if(hlptim->Instance==LPTIM2)
+  {
+    /* USER CODE BEGIN LPTIM2_MspDeInit 0 */
+
+    /* USER CODE END LPTIM2_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_LPTIM2_CLK_DISABLE();
+
+    /**LPTIM2 GPIO Configuration
+    PA4     ------> LPTIM2_OUT
+    */
+    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_4);
+
+    /* USER CODE BEGIN LPTIM2_MspDeInit 1 */
+
+    /* USER CODE END LPTIM2_MspDeInit 1 */
   }
   else if(hlptim->Instance==LPTIM3)
   {
@@ -507,32 +558,6 @@ void HAL_SUBGHZ_MspDeInit(SUBGHZ_HandleTypeDef* hsubghz)
 
 }
 
-void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim_pwm)
-{
-  if(htim_pwm->Instance==TIM3)
-  {
-    __HAL_RCC_TIM3_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    /**TIM3 GPIO Configuration
-    PA7     ------> TIM3_CH2
-    */
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin = GPIO_PIN_7;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  }
-}
-
-void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* htim_pwm)
-{
-  if(htim_pwm->Instance==TIM3)
-  {
-    __HAL_RCC_TIM3_CLK_DISABLE();
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_7);
-  }
-}
+/* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */

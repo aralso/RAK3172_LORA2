@@ -69,7 +69,7 @@ uint32_t ReadVBAT(void);
 	Sorties :
 	XL4 : lecture etat sortie 4 : consigne+duty
 	XE01 :Led0 1s
-	XEBcpcd : buzzer XEB1263=> 0,4s  600Hz Vol:10%
+	XEBcdfv : buzzer XEB1464=> 1,6s  2100Hz Vol:10%
 */
 
 uint8_t param_def = 0x30; // bit0:dernier  bit1-2:reenvoi(00:non, 01:2 fois, 10:5 fois)
@@ -1908,14 +1908,14 @@ void traitement_rx (uint8_t* message_in, uint8_t longueur_m) // var :longueur n'
               }
 
 
-              if ((message_in[3] == 'E') && (message_in[4] == 'B')  && (longueur_m == 9))  // XEBcpcd  BUZZER
-                 // Activation buzzer XEBcdpd  ex:XEB1233 Z94  duree*0,1s/periode/duty
-                {  // 1346   =>  1, 0,5s ,1200Hz,vol6   2446:bip  2446
-                  // periode : 0-900:2200Hz  4-1700:1200Hz  6-2100:950Hz
-                  // consigne, duree, periode, duty
+              if ((message_in[3] == 'E') && (message_in[4] == 'B')  && (longueur_m == 9))  // XEBcdfv  BUZZER
+                 // Activation buzzer XEBcdfv  ex:XEB1464 Z94  duree*0,1s
+                {  // 1464   =>  1, 1,5s ,2100Hz,vol4   2446:bip
+                  // frequence : 0:3000Hz  9:1000Hz   0:900Hz 1:1100Hz 6:2150Hz 7:2300Hz
+                  // consigne, duree, frequence, volume
                   // duree : 1:0,2s 2:0,4s  3:1s  4:1,6s  5:3,2s   6:6s   7:12s   8:25s   9:50s   10:1,5min
                   ACTIV_PWM ( 0,message_in[5] - '0', (uint32_t)( 1 << (message_in[6] - '0')),
-                             (uint32_t)(900 + 200 *(message_in[7] - '0')), (message_in[8] - '0')*8);
+                             (message_in[7] - '0')*2 + 10, (message_in[8] - '0')*16);
                 }
               if ((message_in[3] == 'S') && (longueur_m == 7))  // XSabc  SPOT LED en PWN  a:mode  b:duree  c:duty
               {

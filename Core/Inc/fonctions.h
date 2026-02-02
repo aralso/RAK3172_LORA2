@@ -32,6 +32,7 @@ typedef enum  {
     EVENT_BUTTON = 0,
 	EVENT_LED,
 	EVENT_SORTIES,
+	EVENT_PWM,
     EVENT_UART_RX,
     EVENT_WAKE_UP,
     EVENT_SLEEP,
@@ -42,7 +43,6 @@ typedef enum  {
     EVENT_TIMER_20min,
 	EVENT_TIMER_LPTIM,
 	EVENT_UART_RAZ,
-    EVENT_CAD_DONE,
 	#if CODE_TYPE == 'C'
 		EVENT_TIMER_1min,
 		EVENT_TIMER_10min,
@@ -126,7 +126,7 @@ typedef struct
     uint8_t     duty2;
     uint8_t     duree_chgt;  // duree avant changement
     TimerHandle_t      h_clock;     // handle clock
-    TIM_HandleTypeDef* htim;
+    LPTIM_HandleTypeDef* hlptim;
 } EtatPwm;
 
 // Structure pour le suivi des tâches
@@ -220,6 +220,7 @@ void Init_ES(void);
 void message_lecture_etat_sortie(uint8_t num, uint8_t dest);
 void ACTIV_SORTIE(uint8_t num, uint8_t consigne, int unsigned duree);
 void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned periode1, uint8_t duty1);  //dï¿½finit les variables buzzer en fonction de 'consigne', duree, volume
+void ETAT_PWM(uint8_t num);
 
 uint8_t GetBatteryLevel(void);
 uint16_t BSP_RAK5005_GetBatteryLevel(void);

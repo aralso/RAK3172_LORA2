@@ -113,6 +113,12 @@ static void WatchdogTimerCallback(TimerHandle_t xTimer);
 static void Timer24hCallback(TimerHandle_t xTimer);
 static void Timer20minCallback(TimerHandle_t xTimer);
 static void TimerLEDCallback(TimerHandle_t xTimer);
+void ETAT_PWM_Callback(TimerHandle_t xTimer);
+void ETAT_PWM(uint8_t num);
+void allumedebut_PWM(uint8_t num);
+void allume_PWM(uint8_t num);
+void eteint_PWM(uint8_t num);
+void SORTIE_S_Callback(TimerHandle_t xTimer);
 
 void SystemClock_Config(void);
 void ETAT_SORTIE(uint8_t num);  // change l'etat des sorties
@@ -134,25 +140,6 @@ void toggle_led(uint8_t num)  // Sorties : 0:PA13, 1:PA6, 2:PA7
 void toggle_led_port(uint8_t num)  // Sorties : 0:PA13, 1:PA6, 2:PA7
 {
 	    HAL_GPIO_TogglePin(GPIO_ports[SortieTor[num].port], 1<<SortieTor[num].pin);
-
-}
-
-void SORTIE_S_Callback(TimerHandle_t xTimer)
-{
-	uint32_t timer_num = (uint32_t) pvTimerGetTimerID(xTimer);
-
-
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    event_t evt = { EVENT_SORTIES, (uint8_t) timer_num, 0 };
-
-    if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS)
-    {
-        code_erreur = ISR_callback;
-        err_donnee1 = 8;
-    }
-
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
 
 }
 
@@ -197,17 +184,38 @@ void Init_ES(void)
 
 	   #if NB_PWM >0
 		   Pwm[0].duree = 0;
-           extern TIM_HandleTypeDef htim3;
-		   Pwm[0].htim = &htim3;
-           Pwm[0].h_clock = xTimerCreate("PWM0", 100, pdTRUE, (void*)0, ETAT_PWM_Callback);
-	   #endif
+           extern LPTIM_HandleTypeDef hlptim2;
+		   Pwm[0].hlptim = &hlptim2;
+           Pwm[0].h_clock = xTimerCreate("PWM0", 60000, pdFALSE, (void*)0, ETAT_PWM_Callback); 
+           Pwm[0].periode2 = 25;
+		   #endif
 
 }
+
+void SORTIE_S_Callback(TimerHandle_t xTimer)
+{
+	uint32_t timer_num = (uint32_t) pvTimerGetTimerID(xTimer);
+
+    event_t evt = { EVENT_SORTIES, (uint8_t) timer_num, 0 };
+
+    if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+    {
+        code_erreur = ISR_callback;
+        err_donnee1 = 8;
+    }
+}
+
 
 void ETAT_PWM_Callback(TimerHandle_t xTimer)
 {
     uint32_t timer_num = (uint32_t) pvTimerGetTimerID(xTimer);
-    ETAT_PWM((uint8_t)timer_num);
+    event_t evt = { EVENT_PWM, (uint8_t) timer_num, 0 };
+
+    if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+    {
+        code_erreur = ISR_callback;
+        err_donnee1 = 9;
+    }
 }
 
 
@@ -408,12 +416,20 @@ void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned p
     #if NB_PWM > 0
     if (num < NB_PWM)
     {
-        Pwm[num].consigne = consigne;    // Nota : a la fin de cette routine, le buzzer s'allume ou s'eteint
+        static uint32_t last_pwm_tick = 0;
+        uint32_t current_tick = xTaskGetTickCount();
+        
+        // Anti-doublon commande (moins de 100ms)
+        if ((current_tick - last_pwm_tick) < 100 && Pwm[num].consigne == consigne) return;
+        last_pwm_tick = current_tick;
+
+        Pwm[num].consigne = consigne;    
         Pwm[num].nb_flash = consigne - 11;
-        Pwm[num].etat = 0;      // 0:pas dï¿½marï¿½, 1:pause, 2:allume, 3:2ï¿½ ton
+        Pwm[num].etat = 0;      
         Pwm[num].duree = duree;
         Pwm[num].periode1 = periode1;
         Pwm[num].duty1 = duty1;
+        //LOG_INFO("PWM cmd: num:%d cons:%d dur:%d per:%d duty:%d", num, consigne, duree, periode1, duty1);
 
         xTimerStop(Pwm[num].h_clock, 0);
 
@@ -427,7 +443,7 @@ void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned p
                 allumedebut_PWM(num);   // active la sortie PWM
                 Pwm[num].etat = 2;      // 0:pas demarré, 1:pause, 2:allumé
             }
-            xTimerChangePeriod (Pwm[num].h_clock, duree * 100/ portTICK_PERIOD_MS, 0);  // millisecondes
+            xTimerChangePeriod(Pwm[num].h_clock, (TickType_t)(duree * 100), 10);
         }
         else  // consigne avec timer        // active la sortie
         {
@@ -440,131 +456,167 @@ void ACTIV_PWM( uint8_t num,uint8_t consigne, int unsigned duree, int unsigned p
 
 void allumedebut_PWM(uint8_t num)
 {
-    if (Pwm[num].htim != NULL)
+    if (Pwm[num].hlptim != NULL)
     {
-        // 1. Verrouiller le mode STOP2 (Inhibition)
-        #include "stm32_lpm.h"
-        #include "utilities_def.h"
-        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_DISABLE);
+        HAL_LPTIM_PWM_Stop(Pwm[num].hlptim); 
 
-        // 2. Configurer la période et le duty cycle
-        uint32_t pulse = (Pwm[num].duty1 * (Pwm[num].periode1 + 1)) / 255;
-        __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode1);
-        __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
+        /*uint32_t ticks;
+        //uint32_t ticks_period = (uint32_t)((32768ULL * (uint64_t)Pwm[num].periode1) / 1000000ULL);
+        
+        ticks = 32768 / Pwm[num].periode1;  // 1000Hz:32 3000Hz:11
 
-        // 3. Démarrer le PWM
-        HAL_TIM_PWM_Start(Pwm[num].htim, TIM_CHANNEL_2);
+        if (ticks < 4) ticks = 4; // Sécurité fréquence (limite physique buzzer)
+        if (ticks > 0xFFFF) ticks = 0xFFFF;
+        uint32_t arr = ticks - 1;
+        
+        uint32_t on_ticks = (uint32_t)(((uint64_t)Pwm[num].duty1 * (uint64_t)ticks) / 255ULL);
+        uint32_t cmp;
+        
+        // CMP logic (Polarity High) : Signal est ON de CMP à ARR.
+        if (on_ticks >= ticks) cmp = 0;
+        else if (on_ticks == 0) cmp = ticks; 
+        else cmp = ticks - on_ticks;
+
+	    uint32_t on_ticks = (Pwm[num].duty2 * (arr + 1)) / 255;
+        // Garantie CMP <= ARR
+        if (cmp > arr && on_ticks > 0) cmp = arr;*/
+
+        uint32_t arr = Pwm[num].periode1;
+	    uint32_t cmp = arr - (Pwm[num].duty1 * (arr + 1)) / 255;//arr + 1 - on_ticks;
+	    if (cmp > arr) cmp = arr;
+	    if (cmp < arr/2) cmp=arr/2;
+
+        //LOG_INFO("LPTIM:ARR=%u CMP=%u", (unsigned int)arr, (unsigned int)cmp);
+
+        HAL_LPTIM_PWM_Start(Pwm[num].hlptim, arr, cmp); 
         Pwm[num].etat = 2;
     }
 }
 
 void allume_PWM(uint8_t num)
 {
-    if (Pwm[num].htim != NULL)
-    {
-        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_DISABLE);
-        HAL_TIM_PWM_Start(Pwm[num].htim, TIM_CHANNEL_2);
-        Pwm[num].etat = 2;
-    }
+    allumedebut_PWM(num);
 }
 
 void eteint_PWM(uint8_t num)
 {
-    if (Pwm[num].htim != NULL)
+    if (Pwm[num].hlptim != NULL)
     {
-        HAL_TIM_PWM_Stop(Pwm[num].htim, TIM_CHANNEL_2);
-        // Réautoriser le mode STOP2
-        UTIL_LPM_SetStopMode((1 << CFG_LPM_PWM_Id), UTIL_LPM_ENABLE);
+        HAL_LPTIM_PWM_Stop(Pwm[num].hlptim);
         Pwm[num].etat = 1;
     }
 }
 
 void ETAT_PWM(uint8_t num)
 {
-    uint8_t a;
-    uint8_t cycle_fin=0;
-    uint8_t cons = Pwm[num].consigne;
+	if (num<NB_PWM)
+	{
+		uint8_t a;
+		uint8_t cycle_fin=0;
+		uint8_t cons = Pwm[num].consigne;
 
-   if (cons > 1)
-    {
-        if (Pwm[num].etat != 2 && Pwm[num].etat != 3)   // buzzer eteint ou pause
-        {
-            a = 0;
-            switch(cons) {
-                case 2: a = 2; break;
-                case 3: a = 15; break;
-                case 4: a = 1; break;
-                case 5: a = 10; break;
-                case 6: a = 100; break;
-                case 7: a = 20; break;
-                default: a = 0;
-            }
-        }
-        else    // buzzer sonne
-        {
-            switch (cons)
-            {
-                case 2 : a = 2; break;
-                case 3 : a = 15; break;
-                case 4 : a = 4; break;
-                case 5 : a = 15; break;
-                case 6 : a = 2; break;
-                case 7 : a = 5; break;
-                case 11...19:
-                    if (Pwm[num].nb_flash == 0) {
-                        a = 12;
-                        Pwm[num].nb_flash = cons - 11;
-                    } else {
-                        a = 2;
-                        Pwm[num].nb_flash--;
-                    }
-                    break;
-                default : a = 0;
-            }
-        }
-        if (Pwm[num].duree && a >= Pwm[num].duree)
-            cycle_fin = 1;
-   }
-   else
-   {
-       cycle_fin = 1;
-   }
+	   if (cons > 1)
+		{
+			if (Pwm[num].etat != 2 && Pwm[num].etat != 3)   // buzzer eteint ou pause
+			{
+				a = 0;
+				switch(cons) {
+					case 2: a = 2; break;
+					case 3: a = 15; break;
+					case 4: a = 1; break;
+					case 5: a = 10; break;
+					case 6: a = 100; break;
+					case 7: a = 20; break;
+					default: a = 0;
+				}
+			}
+			else    // buzzer sonne
+			{
+				switch (cons)
+				{
+					case 2 : a = 2; break;
+					case 3 : a = 15; break;
+					case 4 : a = 4; break;
+					case 5 : a = 15; break;
+					case 6 : a = 2; break;
+					case 7 : a = 5; break;
+					case 11:
+					case 12:
+					case 13:
+					case 14:
+					case 15:
+					case 16:
+					case 17:
+					case 18:
+					case 19:
+						if (Pwm[num].nb_flash == 0) {
+							a = 12;
+							Pwm[num].nb_flash = cons - 11;
+						} else {
+							a = 2;
+							Pwm[num].nb_flash--;
+						}
+						break;
+					default : a = 0;
+				}
+			}
+			if (Pwm[num].duree && a >= Pwm[num].duree)
+				cycle_fin = 1;
+	   }
+	   else
+	   {
+		   cycle_fin = 1;
+	   }
 
-   if (cycle_fin)
-   {
-       eteint_PWM(num);
-       xTimerStop(Pwm[num].h_clock, 0);
-   }
-   else
-   {
-       if (cons != 5)
-       {
-           if (Pwm[num].etat < 2)
-               allume_PWM(num);
-           else
-               eteint_PWM(num);
-       }
-       else  // bi-ton
-       {
-           if (Pwm[num].etat == 2)
+	   if (cycle_fin)
+	   {
+		   //LOG_INFO("PWM fin: num:%d cons:%d", num, cons);
+		   eteint_PWM(num);
+		   xTimerStop(Pwm[num].h_clock, 0);
+	   }
+	   else
+	   {
+		   if (cons != 5)
+		   {
+			   if (Pwm[num].etat < 2)
+				   allume_PWM(num);
+			   else
+				   eteint_PWM(num);
+		   }
+		   else  // bi-ton
+		   {
+			   if (Pwm[num].etat == 2)
+			   {
+				   Pwm[num].etat = 3;
+			       uint32_t arr = Pwm[num].periode2;
+				    uint32_t cmp = arr - (Pwm[num].duty1 * (arr + 1)) / 255;//arr + 1 - on_ticks;
+				    if (cmp > arr) cmp = arr;
+				    if (cmp < arr/2) cmp=arr/2;
+
+				   HAL_LPTIM_PWM_Stop(Pwm[num].hlptim);
+				   HAL_LPTIM_PWM_Start(Pwm[num].hlptim, arr, cmp);
+			   }
+			   else
+			   {
+				   Pwm[num].etat = 2;
+			       uint32_t arr = Pwm[num].periode1;
+				    uint32_t cmp = arr - (Pwm[num].duty1 * (arr + 1)) / 255;//arr + 1 - on_ticks;
+				    if (cmp > arr) cmp = arr;
+				    if (cmp < arr/2) cmp=arr/2;
+				   HAL_LPTIM_PWM_Stop(Pwm[num].hlptim);
+				   HAL_LPTIM_PWM_Start(Pwm[num].hlptim, arr, cmp);
+				   if (Pwm[num].etat == 0) allume_PWM(num); // Sécurité init
+			   }
+		   }
+		   if (Pwm[num].duree) 
            {
-               Pwm[num].etat = 3;
-               uint32_t pulse = (Pwm[num].duty2 * (Pwm[num].periode2 + 1)) / 255;
-               __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode2);
-               __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
+               if (a >= Pwm[num].duree) Pwm[num].duree = 0;
+               else Pwm[num].duree -= a;
            }
-           else
-           {
-               Pwm[num].etat = 2;
-               uint32_t pulse = (Pwm[num].duty1 * (Pwm[num].periode1 + 1)) / 255;
-               __HAL_TIM_SET_AUTORELOAD(Pwm[num].htim, Pwm[num].periode1);
-               __HAL_TIM_SET_COMPARE(Pwm[num].htim, TIM_CHANNEL_2, pulse);
-               if (Pwm[num].etat == 0) allume_PWM(num); // Sécurité init
-           }
-       }
-       if (Pwm[num].duree) Pwm[num].duree -= a;
-       xTimerChangePeriod(Pwm[num].h_clock, a * 100 / portTICK_PERIOD_MS, 0);
-   }
+		   //LOG_INFO("PWM step: num:%d etat:%d dur_rem:%d wait:%d", num, Pwm[num].etat, Pwm[num].duree, a*100);
+		   xTimerChangePeriod(Pwm[num].h_clock, (TickType_t)(a * 100), 10);
+	   }
+	}
 }
 
 
@@ -969,7 +1021,7 @@ void TimerLEDCallback(TimerHandle_t xTimer)
 	void Timertemp_periodCallback(TimerHandle_t xTimer)
 	{
 		event_t evt = { EVENT_TIMER_Tempe, 0, 0 };
-		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS) {
+		if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS) {
 			code_erreur = Timer_callback; 		err_donnee1 = 4; }
 	}
 #endif

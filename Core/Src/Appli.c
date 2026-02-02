@@ -6,12 +6,11 @@
 
 
  TODO :
- clignot sorties, pwm,
  antirebond 2 boutons entrees
- 2e uart
- séparer en 2 taches (appli, lora)
+ 2e uart pour ESP32
  mettre messages longs (10k)
  lora classe B
+ 2 concentrateurs : B->C
  planning chaudiere
 
  améliorer/verifier :
@@ -22,6 +21,7 @@
  IA-lptim2 ou RTC pour radio
  IA-config de lptim1 pour freertos
  IA-Mat-envoie log
+ Conso : en veille, reveil Watchdog, émission Lora, recep lora courte
 
  v1.14 01/2026 : séparation taches Lora et appli, clignotement sorties
  v1.13 01/2026 : HAL_Delay corrigé, SLE-lecture erreurs, nb_reset
@@ -41,6 +41,7 @@
 LPTIM1 : timer freertos en mode stop
 Alarm_RTC : interrupt toutes les 24 heures
 RTC : pour radio
+Lptim2 : pour PWM. Ne fonctionne pas en STOP2
 
 Conso en mode Stop2 (sans uart) : 2uA
 	Coeur Stop 2 (cpu+ram) : 0,4 uA  (en STOP1:+3uA)
@@ -53,7 +54,7 @@ Conso en mode Stop2 (sans uart) : 2uA
 Autres :
 	LPUART1				   : 0,7uA (avec RX pullup : +2,5uA)
 	reveil watchdog 20s    : 0,25uA (1ms à 5mA chaque 20s)
-	Envoi temp 20min       : 6uA (0,5s à 15mA chaque 20 min)
+	Envoi temp 20min       : 6uA (500ms à 15mA chaque 20 min)
 
 Délais :
 	HAL_Delay : boucle basée sur HAL_GetTick() avec TIM16
@@ -1013,6 +1014,12 @@ void Appli_Tsk(void *argument)
                     Clignot_sortie(evt.source);
 					break;
 				}
+				case EVENT_PWM:{
+					//LOG_INFO("Timer buzzer %i", evt.source);
+				    ETAT_PWM(evt.source);
+					break;
+				}
+
 				case EVENT_BUTTON: {
 					LOG_INFO("Button pressed event");
 					// Actions pour bouton pressé
@@ -1025,12 +1032,6 @@ void Appli_Tsk(void *argument)
 					break;
 				}
 
-				case EVENT_CAD_DONE: {
-					LOG_INFO("Cad Done : %i", evt.data);
-					lora_tx_on_cad_result(evt.data != 0);
-
-					break;
-				}
 
 				case EVENT_WAKE_UP: {
 					LOG_INFO("Wake up event");

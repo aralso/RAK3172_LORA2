@@ -93,7 +93,17 @@ void EnterStopWithLPTIM(TickType_t xExpectedIdleTime);
 
 void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime )
 {
-	if(xExpectedIdleTime < MIN_TICKS_FOR_STOP)
+    // Bypass STOP2 if PWM is active (buzzer) or NO_SLEEP is defined
+    uint8_t bypass_stop = false;
+    #ifdef NO_SLEEP
+    bypass_stop = true;
+    #endif
+
+    #if NB_PWM > 0
+    if (Pwm[0].etat == 2) bypass_stop = true; // Buzzer en cours d'allumage
+    #endif
+
+	if(xExpectedIdleTime < MIN_TICKS_FOR_STOP || bypass_stop)
 	{
 		nb_entrees_mode_sleep++;
 		// sleep léger
@@ -159,12 +169,16 @@ void EnterStopWithLPTIM(TickType_t  xExpectedIdleTime)
     /* Hook utilisateur éventuel */
     configPRE_SLEEP_PROCESSING( &xExpectedIdleTime );
 
+    // LOG_INFO("Entrée STOP2 (%u ms)", (unsigned int)(xExpectedIdleTime)); // Trop de logs potentiellement
+
     /* Entrée en STOP1 */
     HAL_PWREx_EnterSTOP2Mode( PWR_STOPENTRY_WFI );
 
     /* -------------  STOP ---------------- Réveil ici */
 
     configPOST_SLEEP_PROCESSING( &xExpectedIdleTime );
+    
+    // LOG_INFO("Sortie STOP2");
 
     /* Reconfigurer l’horloge système */
     SystemClock_Config();

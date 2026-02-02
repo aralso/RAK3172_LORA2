@@ -176,6 +176,12 @@ void Lora_Tsk(void *argument)
 					relance_radio_rx(0);  // RX ou sleep
 					break;
 				}
+				case EVENT_CAD_DONE: {
+					LOG_INFO("Cad Done : %i", evt.data);
+					lora_tx_on_cad_result(evt.data != 0);
+
+					break;
+				}
 
 				case EVENT_LORA_RX: {
 					LOG_INFO("message LORA recu len:%i rssi:%i snr:%i param:%02X mess:%s", evt.data, message_recu.rssi, \
@@ -250,7 +256,7 @@ static void TimerloraTXCallback(TimerHandle_t xTimer)   // interruption
 	}
 
 	event_t evt = { event_type, 0, 0 };
-	if (xQueueSend(Event_QueueHandle, &evt, 0) != pdPASS)
+	if (xQueueSend(EventLora_Queue, &evt, 0) != pdPASS)
 	{
 		code_erreur = Timer_callback; 		err_donnee1 = 9;
 	}
@@ -265,7 +271,7 @@ void lora_timer_tx(void)
 	{
 		event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
+		if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 7;}
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 	else if (g_tx_state == RX_RESPONSES)  // message réponse non recu à la fin de la phase de TX =>
@@ -277,7 +283,7 @@ void lora_timer_tx(void)
 			{
 				event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
                 BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-				xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken);
+				xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken);
                 portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 			}
 		}
@@ -293,7 +299,7 @@ void lora_timer_tx(void)
 			{
 				event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
                 BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-				xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken);
+				xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken);
                 portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 			}
 		}
@@ -304,7 +310,7 @@ void lora_timer_tx(void)
 	{
 		event_t evt = { EVENT_LORA_TX_STEP, 0, 0 };
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken);
+		xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 }
@@ -1039,7 +1045,7 @@ void lora_tx_state_step(void)
             	// recharger un nouveau message a envoyer
             	g_tx_state = TX_IDLE;
                 event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-                xQueueSend(Event_QueueHandle, &evt, 0);
+                xQueueSend(EventLora_Queue, &evt, 0);
             }
         }
         else // attendre ack requis
@@ -1069,7 +1075,7 @@ void lora_tx_state_step(void)
         	// recharger un nouveau message a envoyer
         	g_tx_state = TX_IDLE;
             event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-            xQueueSend(Event_QueueHandle, &evt, 0);
+            xQueueSend(EventLora_Queue, &evt, 0);
         }
     	break;
     }
@@ -1087,7 +1093,7 @@ void lora_tx_state_step(void)
 			g_tx_state = TX_WAIT_CAD;
     	    //timer_lora_ms(3000);  // Attendre 100ms
 			event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-			xQueueSend(Event_QueueHandle, &evt, 0);
+			xQueueSend(EventLora_Queue, &evt, 0);
 		}
     	else //fin phase transmission , début phase réception
     	{
@@ -1182,7 +1188,7 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
 			{
 				event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
                 BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		    	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 1;}
+		    	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 1;}
                 portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 			}
 		}
@@ -1198,7 +1204,7 @@ void lora_on_tx_done(void)  // envoie d'un ack ou d'un message
     	g_tx_state = TX_SENT;
     	event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 2;}
+    	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 2;}
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 	else
@@ -1227,10 +1233,10 @@ void lora_on_rx_done(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
     raw_rx_packet.rssi = rssi;
     raw_rx_packet.snr = snr;
 
-    // Signaler à la tâche d'application qu'une trame est prête
+    // Signaler à la tâche d'application qu'une trame RX est dispo
     event_t evt = { EVENT_LORA_RAW_RX, SOURCE_LORA, size };
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) {
+    if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) {
         code_erreur = ISR_callback;
         err_donnee1 = 3;
     }
@@ -1363,7 +1369,7 @@ void lora_process_rx_frame(lora_RawPacket_t* raw)
                 g_rx_state = RX_IDLE;
                 relance_radio_rx(1);
                 event_t evt = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-                xQueueSend(Event_QueueHandle, &evt, 0);
+                xQueueSend(EventLora_Queue, &evt, 0);
             }
             else //message normal
             {
@@ -1395,7 +1401,7 @@ void lora_process_rx_frame(lora_RawPacket_t* raw)
 
                 // Traitement applicatif standard - nota :ack pas encore envoyé
                 event_t evt = { EVENT_LORA_RX, SOURCE_LORA, len };
-                xQueueSend(Event_QueueHandle, &evt, 0);
+                xQueueSend(EventLora_Queue, &evt, 0);
 
 				if (!ack_rep) // sinon attendre ack sent
                 {
@@ -1413,7 +1419,7 @@ void lora_process_rx_frame(lora_RawPacket_t* raw)
                             g_tx_class = classe;
                             g_tx_dest = payload[2];
                             event_t evt_tx = { EVENT_LORA_TX_STEP, SOURCE_LORA, 0 };
-                            xQueueSend(Event_QueueHandle, &evt_tx, 0);
+                            xQueueSend(EventLora_Queue, &evt_tx, 0);
                         }
                     }
                 }
@@ -1434,7 +1440,7 @@ void lora_on_tx_timeout(void)
 	g_tx_state = TX_IDLE;
 	nb_messages_envoyes = 0;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 6;}
+	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 6;}
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -1446,7 +1452,7 @@ void lora_on_rx_timeout(void)
         event_t evt = { EVENT_LORA_RX_TIMEOUT, g_rx_state, g_tx_state };
 		g_tx_state = TX_IDLE;
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 8;}
+    	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 8;}
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -1457,7 +1463,7 @@ void lora_on_rx_error(void)
     event_t evt = { EVENT_RELANCE_RX, 6, nb_messages_envoyes };
 	nb_messages_envoyes = 0;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 9;}
+	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 9;}
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -1466,7 +1472,7 @@ void lora_on_cad_done(bool channelActivityDetected)
 {
     event_t evt = { EVENT_CAD_DONE, SOURCE_LORA, channelActivityDetected ? 1 : 0 };
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	if (xQueueSendFromISR(Event_QueueHandle, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 10;}
+	if (xQueueSendFromISR(EventLora_Queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) { code_erreur = ISR_callback; err_donnee1 = 10;}
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -1475,7 +1481,7 @@ void relance_rx(uint8_t actif)
 {
 	g_rx_state = RX_IDLE;
     event_t evt = { EVENT_RELANCE_RX, 1, actif };
-    xQueueSend(Event_QueueHandle, &evt, 0);
+    xQueueSend(EventLora_Queue, &evt, 0);
 }
 
 // Version ISR Safe
@@ -1841,7 +1847,7 @@ uint8_t mess_LORA_enqueue(out_message_t* mess)
     	g_tx_state = TX_DEBUT;
     	g_tx_dest = mess->dest;
 		event_t evt = { EVENT_LORA_TX, q_id, 0 };
-		if (xQueueSendFromISR(Event_QueueHandle, &evt, 0) != pdPASS)
+		if (xQueueSendFromISR(EventLora_Queue, &evt, 0) != pdPASS)
 			{ code_erreur = ISR_callback; 	err_donnee1 = 7; }
     }
     //else
